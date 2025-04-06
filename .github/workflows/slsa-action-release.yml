@@ -58,7 +58,7 @@ jobs:
 
       # Update corresponding major and minor tags
       - uses: haya14busa/action-update-semver@v1.2.1
-        if: "steps.bumpr.outputs.skip != 'true'"
+        if: steps.bumpr.outputs.skip != 'true'
         with:
           tag: ${{ steps.bumpr.outputs.next_version }}
 
@@ -76,7 +76,7 @@ jobs:
 
       # Extract version number without "v" prefix (v1.2.3 → 1.2.3)
       - id: extract-version
-        if: "steps.tag.outputs.value != ''"
+        if: steps.tag.outputs.value != ''
         run: |
           TAG=${{ steps.tag.outputs.value }}
           VERSION=${TAG#refs/tags/v}
@@ -87,7 +87,7 @@ jobs:
   # Prepare information for SLSA provenance
   prepare-info:
     needs: [version]
-    if: "needs.version.outputs.tag_name != ''"
+    if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.save-info.outputs.commit_sha }}
@@ -114,7 +114,7 @@ jobs:
   # Prepare the base64-subjects for SLSA provenance
   prepare-subjects:
     needs: [version, prepare-info]
-    if: "needs.version.outputs.tag_name != ''"
+    if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     outputs:
       base64-subjects: ${{ steps.generate-subjects.outputs.base64-subjects }}
@@ -139,10 +139,18 @@ jobs:
           BASE64_SUBJECTS=$(base64 -w0 subjects.txt)
           echo "base64-subjects=$BASE64_SUBJECTS" >> $GITHUB_OUTPUT
 
+      # Upload subjects.txt as an artifact to share between jobs
+      - name: Upload subjects.txt artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: subjects-file
+          path: subjects.txt
+          retention-days: 1
+
   # Generate SLSA provenance using reusable workflow
   generate-provenance:
     needs: [version, prepare-info, prepare-subjects]
-    if: "needs.version.outputs.tag_name != ''"
+    if: needs.version.outputs.tag_name != ''
     permissions:
       id-token: write    # Required for SLSA provenance generation
       contents: write    # Required for attestations
@@ -157,7 +165,7 @@ jobs:
   # Create GitHub Release job
   release:
     needs: [version, generate-provenance, prepare-info]
-    if: "needs.version.outputs.tag_name != ''"
+    if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required for release creation
@@ -168,6 +176,12 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.tag_name }}
+      
+      # Download the subjects.txt artifact from the prepare-subjects job
+      - name: Download subjects.txt
+        uses: actions/download-artifact@v3
+        with:
+          name: subjects-file
 
       # Create GitHub Release
       - name: Create GitHub Release
