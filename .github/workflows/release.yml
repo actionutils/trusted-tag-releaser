@@ -1,0 +1,33 @@
+name: Release Action
+
+on:
+  push:
+    branches:
+      - main  # Only run on main branch pushes (PR merges)
+  pull_request:
+    types:
+      - labeled  # Run when PRs are labeled
+
+jobs:
+  # Handle PR labeling workflow checks
+  release-check:
+    if: github.event.action == 'labeled'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post bumpr status comment
+        uses: haya14busa/action-bumpr@v1.11.1
+
+  # Use the reusable SLSA workflow for releases
+  release:
+    if: github.event.action != 'labeled'
+    permissions:
+      id-token: write    # Required for SLSA provenance
+      contents: write    # Required for release and tag creation
+      pull-requests: write # Required for bumpr commenting
+      actions: read      # Required for SLSA generator
+    uses: ./.github/workflows/slsa-action-release.yml
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
