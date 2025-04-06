@@ -141,7 +141,7 @@ jobs:
       id-token: write    # Required for SLSA provenance generation
       contents: write    # Required for attestations
       actions: read      # Required to access workflow information
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.prepare-subjects.outputs.base64-subjects }}
       provenance-name: "github-action-${{ needs.prepare-info.outputs.tag_name }}"
