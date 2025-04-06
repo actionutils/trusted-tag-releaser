@@ -183,8 +183,8 @@ jobs:
         with:
           name: subjects-file
 
-      # Create GitHub Release
-      - name: Create GitHub Release
+      # Update existing draft release
+      - name: Update GitHub Release
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
@@ -193,12 +193,26 @@ jobs:
           # Remove refs/tags/ prefix if present
           TAG_NAME="${TAG_NAME#refs/tags/}"
 
-          RELEASE_URL=$(gh release create "$TAG_NAME" \
-            subjects.txt \
-            --title "Release $TAG_NAME" \
-            --notes "${{ steps.bumpr.outputs.message }}" \
-            --verify-tag)
+          # Check if draft release exists
+          if gh release view "$TAG_NAME" --json isDraft,url 2>/dev/null | grep -q '"isDraft": true'; then
+            echo "Updating existing draft release for $TAG_NAME"
+            # Update the existing draft release
+            RELEASE_URL=$(gh release edit "$TAG_NAME" \
+              --title "Release $TAG_NAME" \
+              --notes "${{ steps.bumpr.outputs.message }}" \
+              --draft=false)
+            
+            # Upload subjects.txt to the release
+            gh release upload "$TAG_NAME" subjects.txt --clobber
+          else
+            echo "No draft release found, creating new release for $TAG_NAME"
+            # Create a new release
+            RELEASE_URL=$(gh release create "$TAG_NAME" \
+              subjects.txt \
+              --title "Release $TAG_NAME" \
+              --notes "${{ steps.bumpr.outputs.message }}" \
+              --verify-tag)
+          fi
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
-
-          echo "Created release: $RELEASE_URL"
+          echo "Release URL: $RELEASE_URL"
