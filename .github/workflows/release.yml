@@ -27,6 +27,7 @@ jobs:
       id-token: write    # Required for SLSA provenance
       contents: write    # Required for release and tag creation
       pull-requests: write # Required for bumpr commenting
+      actions: read      # Required for SLSA generator
     uses: ./.github/workflows/slsa-action-release.yml
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
