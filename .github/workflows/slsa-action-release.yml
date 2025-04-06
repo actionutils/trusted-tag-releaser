@@ -126,8 +126,14 @@ jobs:
           TAG_NAME="${{ needs.prepare-info.outputs.tag_name }}"
           COMMIT_SHA="${{ needs.prepare-info.outputs.commit_sha }}"
 
-          # Format as sha256sum output: "<sha256> <n>"
-          echo "$COMMIT_SHA $TAG_NAME" > subjects.txt
+          # Convert the Git SHA to SHA-256 format (using it as input to sha256sum)
+          SHA256=$(echo -n "$COMMIT_SHA" | sha256sum | cut -d' ' -f1)
+
+          # Format as sha256sum output: "<sha256> <name>"
+          echo "$SHA256 $TAG_NAME" > subjects.txt
+
+          # Display for debugging
+          cat subjects.txt
 
           # Base64 encode the subjects file
           BASE64_SUBJECTS=$(base64 -w0 subjects.txt)
