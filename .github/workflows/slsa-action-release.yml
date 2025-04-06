@@ -150,6 +150,9 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.prepare-subjects.outputs.base64-subjects }}
+      upload-assets: true
+      upload-tag-name: ${{ needs.version.outputs.tag_name }}
+      draft-release: true
 
   # Create GitHub Release job
   release:
@@ -177,6 +180,7 @@ jobs:
           TAG_NAME="${TAG_NAME#refs/tags/}"
 
           RELEASE_URL=$(gh release create "$TAG_NAME" \
+            subjects.txt \
             --title "Release $TAG_NAME" \
             --notes "${{ steps.bumpr.outputs.message }}" \
             --verify-tag)
