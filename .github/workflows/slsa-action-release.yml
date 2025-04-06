@@ -144,8 +144,6 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.prepare-subjects.outputs.base64-subjects }}
-      provenance-name: "github-action-${{ needs.prepare-info.outputs.tag_name }}"
-      private-repository: ${{ !inputs.rekor-log-public }}
 
   # Create GitHub Release job
   release:
