@@ -141,7 +141,7 @@ jobs:
 
       # Upload subjects.txt as an artifact to share between jobs
       - name: Upload subjects.txt artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: subjects-file
           path: subjects.txt
@@ -176,10 +176,10 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.tag_name }}
-      
+
       # Download the subjects.txt artifact from the prepare-subjects job
       - name: Download subjects.txt
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: subjects-file
 
