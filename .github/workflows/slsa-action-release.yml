@@ -92,6 +92,7 @@ jobs:
     outputs:
       commit_sha: ${{ steps.save-info.outputs.commit_sha }}
       tag_name: ${{ steps.save-info.outputs.tag_name }}
+      metadata_sha256: ${{ steps.generate-metadata.outputs.metadata_sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -111,6 +112,40 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
+      # Generate metadata.json file for SLSA verification
+      - name: Generate metadata.json
+        id: generate-metadata
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Create metadata.json file
+          cat > metadata.json << EOF
+          {
+            "name": "$REPO_NAME",
+            "version": "${{ needs.version.outputs.tag_name }}",
+            "timestamp": "$TIMESTAMP",
+            "git": {
+              "commit": "${{ github.sha }}",
+              "tag": "${{ needs.version.outputs.tag_name }}",
+              "repository": "https://github.com/$GITHUB_REPOSITORY"
+            }
+          }
+          EOF
+
+          # Calculate SHA256 hash of metadata.json
+          METADATA_SHA256=$(sha256sum metadata.json | cut -d' ' -f1)
+          echo "metadata_sha256=$METADATA_SHA256" >> $GITHUB_OUTPUT
+          echo "Generated metadata.json with SHA256: $METADATA_SHA256"
+
+      # Upload metadata.json as an artifact to share between jobs
+      - name: Upload metadata.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadata-json
+          path: metadata.json
+          retention-days: 1
+
   # Prepare the base64-subjects for SLSA provenance
   prepare-subjects:
     needs: [version, prepare-info]
@@ -119,18 +154,19 @@ jobs:
     outputs:
       base64-subjects: ${{ steps.generate-subjects.outputs.base64-subjects }}
     steps:
+      - name: Download metadata.json
+        uses: actions/download-artifact@v4
+        with:
+          name: metadata-json
+
       - name: Generate subjects
         id: generate-subjects
         run: |
-          # Create a subject entry for the Git tag/commit
-          TAG_NAME="${{ needs.prepare-info.outputs.tag_name }}"
-          COMMIT_SHA="${{ needs.prepare-info.outputs.commit_sha }}"
-
-          # Convert the Git SHA to SHA-256 format (using it as input to sha256sum)
-          SHA256=$(echo -n "$COMMIT_SHA" | sha256sum | cut -d' ' -f1)
+          # Create a subject entry for the metadata.json file
+          METADATA_SHA256="${{ needs.prepare-info.outputs.metadata_sha256 }}"
 
           # Format as sha256sum output: "<sha256> <name>"
-          echo "$SHA256 $TAG_NAME" > subjects.txt
+          echo "$METADATA_SHA256 metadata.json" > subjects.txt
 
           # Display for debugging
           cat subjects.txt
@@ -177,11 +213,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.tag_name }}
 
-      # Download the subjects.txt artifact from the prepare-subjects job
+      # Download the artifacts from previous jobs
       - name: Download subjects.txt
         uses: actions/download-artifact@v4
         with:
           name: subjects-file
+
+      - name: Download metadata.json
+        uses: actions/download-artifact@v4
+        with:
+          name: metadata-json
+
+      # Create verification instructions
+      - name: Create verification instructions
+        run: |
+          cat > verification.md << 'EOF'
+          ## SLSA Verification
+
+          To verify this release using SLSA:
+
+          1. Download `metadata.json` and the provenance file (`attestation.intoto.jsonl`)
+          2. Run:
+          ```
+          slsa-verifier verify-artifact \
+            --artifact-path metadata.json \
+            --provenance-path attestation.intoto.jsonl \
+            --source-uri github.com/$GITHUB_REPOSITORY
+          ```
+          EOF
+
+          # Replace $GITHUB_REPOSITORY with actual value
+          sed -i "s|\$GITHUB_REPOSITORY|$GITHUB_REPOSITORY|g" verification.md
 
       # Update existing draft release
       - name: Update GitHub Release
@@ -193,13 +255,27 @@ jobs:
 
           echo "Updating existing draft release for $TAG_NAME"
 
-          # Upload subjects.txt to the release
+          # Upload artifacts to the release
           gh release upload "$TAG_NAME" subjects.txt --clobber
+          gh release upload "$TAG_NAME" metadata.json --clobber
+
+          # Get the original release notes if available
+          ORIGINAL_NOTES=$(gh release view "$TAG_NAME" --json body -q .body || echo "")
+
+          # Combine original notes with verification instructions
+          VERIFICATION_NOTES=$(cat verification.md)
+
+          # Create combined release notes
+          cat > release_notes.md << EOF
+          $ORIGINAL_NOTES
+
+          $VERIFICATION_NOTES
+          EOF
 
           # Update the existing draft release
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
-            --notes "${{ steps.bumpr.outputs.message }}" \
+            --notes-file release_notes.md \
             --draft=false)
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
