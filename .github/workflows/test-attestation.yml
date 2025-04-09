@@ -1,0 +1,113 @@
+name: Test Attestation Verify
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test-attestation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub CLI
+        run: |
+          # GitHub CLIは最新のUbuntuランナーにはプリインストールされていますが、
+          # 念のため最新バージョンを確認
+          gh --version
+
+      - name: Get latest release
+        id: latest-release
+        run: |
+          # 最新のリリースタグを取得
+          LATEST_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 | awk '{print $1}')
+          echo "Latest release tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create temporary directory
+        id: tempdir
+        run: |
+          # 一時ディレクトリを作成
+          TEMP_DIR=$(mktemp -d)
+          echo "dir=$TEMP_DIR" >> $GITHUB_OUTPUT
+          echo "Created temporary directory: $TEMP_DIR"
+
+      - name: Download attestation files
+        run: |
+          TAG="${{ steps.latest-release.outputs.tag }}"
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          
+          echo "Downloading files from release: $TAG"
+          
+          # action-identity.json と関連する attestation ファイルをダウンロード
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
+          
+          echo "Downloaded files:"
+          ls -la "$TEMP_DIR"
+
+      - name: Verify attestation (standard output)
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Standard verification ==="
+          echo "Verifying build provenance attestation for action-identity.json"
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          echo "Standard verification exit code: $?"
+
+      - name: Verify attestation (with output redirection)
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Verification with output redirection ==="
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY > verify_output.txt 2>&1
+          VERIFY_EXIT_CODE=$?
+          
+          echo "Verification output:"
+          cat verify_output.txt
+          echo "Verification with redirection exit code: $VERIFY_EXIT_CODE"
+
+      - name: Verify attestation (with verbose flag if available)
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Verification with verbose flag ==="
+          # --verboseフラグが利用可能かどうか確認
+          if gh attestation verify --help | grep -q -- "--verbose"; then
+            gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY --verbose
+          else
+            echo "Verbose flag not available, using standard command"
+            GITHUB_STEP_SUMMARY="Verbose flag not available for gh attestation verify"
+            gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          fi
+          echo "Verification with verbose flag exit code: $?"
+
+      - name: Verify attestation (with debug environment variable)
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Verification with debug environment variable ==="
+          # GH_DEBUGを設定して詳細出力を有効化
+          export GH_DEBUG=1
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          echo "Verification with debug env exit code: $?"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          if [ -d "$TEMP_DIR" ]; then
+            rm -rf "$TEMP_DIR"
+            echo "Temporary directory cleaned up: $TEMP_DIR"
+          fi
+          if [ -f "verify_output.txt" ]; then
+            rm verify_output.txt
+            echo "Output file cleaned up"
+          fi
