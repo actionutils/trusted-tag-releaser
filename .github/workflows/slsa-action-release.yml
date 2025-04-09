@@ -311,7 +311,7 @@ jobs:
             --source-uri "github.com/$REPO_NAME" \
             --source-branch "${{ inputs.branch }}" \
             --print-provenance \
-            "$IDENTITY_FILE" | jq .
+            "$IDENTITY_FILE" 2>/dev/null | jq .
 
       - name: Cleanup
         if: always()
