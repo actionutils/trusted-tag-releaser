@@ -136,74 +136,14 @@ jobs:
 
           echo "Generated action-identity.json"
 
-      # Create temporary directory for archives
-      - name: Create temporary directory
-        id: tempdir-archives
-        run: |
-          # Create temporary directory
-          TEMP_DIR=$(mktemp -d)
-          echo "dir=$TEMP_DIR" >> $GITHUB_OUTPUT
-          echo "Created temporary directory for archives: $TEMP_DIR"
-
-      # Download and calculate checksums for source archives
+      # Generate base64-subjects directly
       - name: Generate subjects
         id: generate-subjects
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          TAG_NAME="${{ needs.version.outputs.tag_name }}"
-          COMMIT_SHA="${{ steps.save-info.outputs.commit_sha }}"
-          TEMP_DIR="${{ steps.tempdir-archives.outputs.dir }}"
-          REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          
-          # Download zip and tar.gz archives using tag URL
-          echo "Downloading source archives for tag $TAG_NAME..."
-          
-          # URLs for downloading archives by tag
-          ZIP_URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG_NAME.zip"
-          TAR_URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG_NAME.tar.gz"
-          
-          # Download archives
-          curl -sL "$ZIP_URL" -o "$TEMP_DIR/$REPO_NAME-$TAG_NAME.zip"
-          curl -sL "$TAR_URL" -o "$TEMP_DIR/$REPO_NAME-$TAG_NAME.tar.gz"
-          
-          # List downloaded files
-          echo "Downloaded archives:"
-          ls -la "$TEMP_DIR"
-          
-          # Define filenames for release
-          ZIP_FILENAME="$REPO_NAME-$TAG_NAME.zip"
-          TAR_FILENAME="$REPO_NAME-$TAG_NAME.tar.gz"
-          
-          # Calculate checksums
-          ZIP_CHECKSUM=$(sha256sum "$TEMP_DIR/$ZIP_FILENAME" | awk '{print $1}')
-          TAR_CHECKSUM=$(sha256sum "$TEMP_DIR/$TAR_FILENAME" | awk '{print $1}')
-          
-          echo "ZIP checksum ($ZIP_FILENAME): $ZIP_CHECKSUM"
-          echo "TAR checksum ($TAR_FILENAME): $TAR_CHECKSUM"
-          
-          # Create subjects file with action-identity.json and source archives
-          cat > subjects.txt << EOF
-          $(sha256sum action-identity.json)
-          $ZIP_CHECKSUM  $ZIP_FILENAME
-          $TAR_CHECKSUM  $TAR_FILENAME
-          EOF
-          
-          echo "Created subjects file with the following entries:"
-          cat subjects.txt
-          
-          # base64 encode the subjects file
-          echo "base64-subjects=$(cat subjects.txt | base64 -w0)" >> $GITHUB_OUTPUT
-          
-      # Clean up temporary archives directory
-      - name: Cleanup archives
-        if: always()
-        run: |
-          TEMP_DIR="${{ steps.tempdir-archives.outputs.dir }}"
-          if [ -d "$TEMP_DIR" ]; then
-            rm -rf "$TEMP_DIR"
-            echo "Temporary archives directory cleaned up: $TEMP_DIR"
-          fi
+          # sha256sum generates output in format "<hash> <filename>" which is exactly what we need
+          # base64 -w0 encodes to base64 and outputs on a single line
+          echo "base64-subjects=$(sha256sum action-identity.json | base64 -w0)" >> $GITHUB_OUTPUT
+
 
       # Upload action-identity.json as an artifact to share between jobs
       - name: Upload action identity artifact
@@ -297,16 +237,14 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Download the specific attestation file, action-identity.json, and archives
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "multiple.intoto.jsonl" --dir "$TEMP_DIR"
+          # Download the specific attestation file and action-identity.json
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
           gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --archive=zip --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --archive=tar.gz --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
 
-      - name: Verify provenance
+      - name: Verify provenance and commit SHA
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
@@ -315,7 +253,7 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Use the specific attestation file and identity file
-          ATTESTATION_FILE="$TEMP_DIR/multiple.intoto.jsonl"
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
 
           if [ -z "$ATTESTATION_FILE" ]; then
@@ -328,44 +266,52 @@ jobs:
             exit 1
           fi
 
-          echo "Verifying provenance for $ATTESTATION_FILE with all artifacts"
-          
-          # Find all artifact files
-          ZIP_FILE=$(find "$TEMP_DIR" -name "*.zip")
-          TAR_FILE=$(find "$TEMP_DIR" -name "*.tar.gz")
-          
-          echo "Found artifacts:"
-          echo "- Identity file: $IDENTITY_FILE"
-          echo "- ZIP file: $ZIP_FILE"
-          echo "- TAR file: $TAR_FILE"
+          echo "Verifying provenance for $ATTESTATION_FILE with identity file"
 
-          # Verify the provenance for all artifacts
+          # Verify the provenance
           slsa-verifier verify-artifact \
             --provenance-path "$ATTESTATION_FILE" \
             --source-uri "github.com/$REPO_NAME" \
             --source-branch "${{ inputs.branch }}" \
-            "$IDENTITY_FILE" "$ZIP_FILE" "$TAR_FILE"
+            "$IDENTITY_FILE"
 
           echo "✅ Provenance verification successful!"
+
+          # Verify that the commit SHA in action-identity.json matches the SHA that the tag points to
+          echo "Verifying commit SHA in action-identity.json..."
+
+          # Get the commit SHA from action-identity.json
+          IDENTITY_COMMIT_SHA=$(jq -r '.git.commit' "$IDENTITY_FILE")
+
+          # Get the commit SHA that the tag points to
+          git fetch --tags
+          TAG_COMMIT_SHA=$(git rev-parse "$TAG_NAME")
+
+          echo "Commit SHA in action-identity.json: $IDENTITY_COMMIT_SHA"
+          echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
+
+          # Verify that the commit SHAs match
+          if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
+            echo "❌ Commit SHA verification failed! The commit SHA in action-identity.json does not match the SHA that the tag points to."
+            exit 1
+          fi
+
+          echo "✅ Commit SHA verification successful!"
 
       - name: Print provenance
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          ATTESTATION_FILE="$TEMP_DIR/multiple.intoto.jsonl"
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           REPO_NAME="${GITHUB_REPOSITORY}"
 
-          # Find all artifact files
-          ZIP_FILE=$(find "$TEMP_DIR" -name "*.zip")
-          TAR_FILE=$(find "$TEMP_DIR" -name "*.tar.gz")
-          
-          echo "Printing provenance information for all artifacts:"
+          echo "Printing provenance information:"
           slsa-verifier verify-artifact \
             --provenance-path "$ATTESTATION_FILE" \
             --source-uri "github.com/$REPO_NAME" \
             --source-branch "${{ inputs.branch }}" \
             --print-provenance \
-            "$IDENTITY_FILE" "$ZIP_FILE" "$TAR_FILE" | jq .
+            "$IDENTITY_FILE" | jq .
 
       - name: Cleanup
         if: always()
