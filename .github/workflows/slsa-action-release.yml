@@ -156,12 +156,12 @@ jobs:
           TEMP_DIR="${{ steps.tempdir-archives.outputs.dir }}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           
-          # Download zip and tar.gz archives using commit hash URL
-          echo "Downloading source archives for commit $COMMIT_SHA..."
+          # Download zip and tar.gz archives using tag URL
+          echo "Downloading source archives for tag $TAG_NAME..."
           
-          # URLs for downloading archives by commit hash
-          ZIP_URL="https://github.com/$GITHUB_REPOSITORY/archive/$COMMIT_SHA.zip"
-          TAR_URL="https://github.com/$GITHUB_REPOSITORY/archive/$COMMIT_SHA.tar.gz"
+          # URLs for downloading archives by tag
+          ZIP_URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG_NAME.zip"
+          TAR_URL="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG_NAME.tar.gz"
           
           # Download archives
           curl -sL "$ZIP_URL" -o "$TEMP_DIR/$REPO_NAME-$TAG_NAME.zip"
