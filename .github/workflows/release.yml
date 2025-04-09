@@ -54,6 +54,7 @@ jobs:
       contents: write    # Required for release and tag creation
       pull-requests: write # Required for bumpr commenting
       actions: read      # Required for SLSA generator
+      attestations: write # Required for build provenance attestation
     uses: ./.github/workflows/slsa-action-release.yml
     with:
       branch: ${{ github.event.repository.default_branch }}

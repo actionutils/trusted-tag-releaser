@@ -88,6 +88,10 @@ jobs:
     needs: [version]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for attestation
+      contents: read    # Required for attestation
+      attestations: write # Required for creating attestations
     outputs:
       commit_sha: ${{ steps.save-info.outputs.commit_sha }}
       tag_name: ${{ steps.save-info.outputs.tag_name }}
@@ -151,12 +155,17 @@ jobs:
 
       # Upload action-identity.json as an artifact to share between jobs
       - name: Upload action identity artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: action-identity-json
           path: action-identity.json
           retention-days: 1
 
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: action-identity.json
+          subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
 
   # Generate SLSA provenance using reusable workflow
   generate-provenance:
@@ -215,7 +224,7 @@ jobs:
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
 
-  # Verify the release using SLSA verifier
+  # Verify the release using SLSA verifier and gh attestation verify
   verify-release:
     needs: [release, prepare-slsa]
     if: needs.version.outputs.tag_name != ''
@@ -252,7 +261,7 @@ jobs:
       # Since we don't include source code archives in the SLSA provenance due to their instability,
       # we instead verify that the commit SHA in action-identity.json matches the SHA that the tag points to.
       # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
-      - name: Verify provenance and commit SHA
+      - name: Verify SLSA provenance and commit SHA (slsa-verifier)
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
@@ -287,21 +296,21 @@ jobs:
 
           # Verify that the commit SHA in action-identity.json matches the SHA that the tag points to
           echo "Verifying commit SHA in action-identity.json..."
-          
+
           # Get the commit SHA from action-identity.json
           IDENTITY_COMMIT_SHA=$(jq -r '.git.commit' "$IDENTITY_FILE")
-          
+
           # Get the commit SHA that the tag points to using GitHub API
           # First, get the tag SHA
           TAG_SHA=$(gh api repos/$REPO_NAME/git/refs/tags/$TAG_NAME --jq '.object.sha')
           echo "Tag SHA: $TAG_SHA"
-          
+
           # Then, get the commit SHA that the tag points to
           TAG_COMMIT_SHA=$(gh api repos/$REPO_NAME/git/tags/$TAG_SHA --jq '.object.sha')
-          
+
           echo "Commit SHA in action-identity.json: $IDENTITY_COMMIT_SHA"
           echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
-          
+
           # Verify that the commit SHAs match
           if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
             echo "❌ Commit SHA verification failed! The commit SHA in action-identity.json does not match the SHA that the tag points to."
@@ -324,6 +333,17 @@ jobs:
             --source-branch "${{ inputs.branch }}" \
             --print-provenance \
             "$IDENTITY_FILE" 2>/dev/null | jq .
+
+      # Verify build provenance attestation using gh attestation verify
+      - name: Verify build provenance attestation (gh attestation verify)
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          # Verify the attestation for action-identity.json
+          echo "Verifying build provenance attestation for action-identity.json"
+          gh attestation verify action-identity.json --repo $GITHUB_REPOSITORY
+
+          echo "✅ Build provenance attestation verification successful!"
 
       - name: Cleanup
         if: always()
