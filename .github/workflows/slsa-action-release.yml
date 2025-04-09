@@ -53,7 +53,7 @@ jobs:
 
       # Bump version based on PR labels (bump:major,bump:minor,bump:patch)
       - id: bumpr
-        uses: haya14busa/action-bumpr@v1.11.3
+        uses: haya14busa/action-bumpr@v1.11.4
 
       # Update corresponding major and minor tags
       - uses: haya14busa/action-update-semver@v1.3.0

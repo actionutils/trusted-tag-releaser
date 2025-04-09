@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Post bumpr status comment
-        uses: haya14busa/action-bumpr@v1.11.3
+        uses: haya14busa/action-bumpr@v1.11.4
 
   # First check if a release is needed
   check-release:

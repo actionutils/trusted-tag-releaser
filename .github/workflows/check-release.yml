@@ -32,6 +32,6 @@ jobs:
 
       # Dry run to check if a version bump is needed
       - id: bumpr-dry-run
-        uses: haya14busa/action-bumpr@v1.11.3
+        uses: haya14busa/action-bumpr@v1.11.4
         with:
           dry_run: true
