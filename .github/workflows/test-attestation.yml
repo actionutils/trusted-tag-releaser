@@ -225,35 +225,31 @@ jobs:
             rm verify_output.txt
             echo "Output file cleaned up"
           fi
-
-      - name: Install additional tools
-        run: |
-          echo "Installing additional tools for output capture testing"
-          sudo apt-get update
-          sudo apt-get install -y expect
           
-      - name: Verify attestation (with alternative output capture methods)
+      - name: Verify attestation (with GH_FORCE_TTY)
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_FORCE_TTY: 1
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           
-          echo "=== Method 1: Using stderr redirection to stdout and cat ==="
-          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1 | cat
+          echo "=== Using GH_FORCE_TTY environment variable ==="
+          echo "Setting GH_FORCE_TTY=1 to force TTY mode"
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          echo "GH_FORCE_TTY verification exit code: $?"
           
-          echo "=== Method 2: Capturing output in a variable ==="
-          OUTPUT=$(gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1)
-          echo "$OUTPUT"
+          # Also try with output redirection
+          echo "=== Using GH_FORCE_TTY with output redirection ==="
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY > force_tty_output.txt 2>&1
+          echo "Output with GH_FORCE_TTY:"
+          cat force_tty_output.txt
           
-          echo "=== Method 3: Using process substitution ==="
-          cat <(gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1)
+          # Try with a failing verification
+          echo "=== Failing verification with GH_FORCE_TTY ==="
+          gh attestation verify "$IDENTITY_FILE" --repo "github/docs" 2>&1 || {
+            echo "Expected failure occurred with exit code: $?"
+          }
           
-          echo "=== Method 4: Using script command ==="
-          script -q /dev/null -c "gh attestation verify \"$IDENTITY_FILE\" --repo $GITHUB_REPOSITORY"
-          
-          echo "=== Method 5: Using stdbuf to disable buffering ==="
-          stdbuf -o0 -e0 gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
-          
-          echo "=== Method 6: Using unbuffer from expect package ==="
-          unbuffer gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          # Clean up
+          rm -f force_tty_output.txt
