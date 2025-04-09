@@ -225,3 +225,35 @@ jobs:
             rm verify_output.txt
             echo "Output file cleaned up"
           fi
+
+      - name: Install additional tools
+        run: |
+          echo "Installing additional tools for output capture testing"
+          sudo apt-get update
+          sudo apt-get install -y expect
+          
+      - name: Verify attestation (with alternative output capture methods)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Method 1: Using stderr redirection to stdout and cat ==="
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1 | cat
+          
+          echo "=== Method 2: Capturing output in a variable ==="
+          OUTPUT=$(gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1)
+          echo "$OUTPUT"
+          
+          echo "=== Method 3: Using process substitution ==="
+          cat <(gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY 2>&1)
+          
+          echo "=== Method 4: Using script command ==="
+          script -q /dev/null -c "gh attestation verify \"$IDENTITY_FILE\" --repo $GITHUB_REPOSITORY"
+          
+          echo "=== Method 5: Using stdbuf to disable buffering ==="
+          stdbuf -o0 -e0 gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          
+          echo "=== Method 6: Using unbuffer from expect package ==="
+          unbuffer gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
