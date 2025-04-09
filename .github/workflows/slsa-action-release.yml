@@ -209,3 +209,92 @@ jobs:
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
+
+  # Verify the release using SLSA verifier
+  verify-release:
+    needs: [release]
+    if: needs.version.outputs.tag_name != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required to read release artifacts
+    steps:
+      - name: Install SLSA verifier
+        uses: slsa-framework/slsa-verifier/actions/installer@v2.7.0
+
+      - name: Create temporary directory
+        id: tempdir
+        run: |
+          # Create temporary directory
+          TEMP_DIR=$(mktemp -d)
+          echo "dir=$TEMP_DIR" >> $GITHUB_OUTPUT
+          echo "Created temporary directory: $TEMP_DIR"
+
+      - name: Download files for verification
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+
+          # Download the specific attestation file and action-identity.json
+          gh release download "$TAG_NAME" --pattern "action-identity.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --pattern "action-identity.json" --dir "$TEMP_DIR"
+
+          echo "Downloaded files to: $TEMP_DIR"
+          ls -la "$TEMP_DIR"
+
+      - name: Verify provenance
+        run: |
+          TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
+          REPO_NAME="${GITHUB_REPOSITORY}"
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+
+          # Use the specific attestation file and identity file
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+
+          if [ -z "$ATTESTATION_FILE" ]; then
+            echo "Error: No attestation file found"
+            exit 1
+          fi
+
+          if [ -z "$IDENTITY_FILE" ]; then
+            echo "Error: No action-identity.json file found"
+            exit 1
+          fi
+
+          echo "Verifying provenance for $ATTESTATION_FILE with identity file $IDENTITY_FILE"
+
+          # Verify the provenance
+          slsa-verifier verify-artifact \
+            --provenance-path "$ATTESTATION_FILE" \
+            --source-uri "github.com/$REPO_NAME" \
+            --source-branch "${{ inputs.branch }}" \
+            "$IDENTITY_FILE"
+
+          echo "✅ Provenance verification successful!"
+
+      - name: Print provenance
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          REPO_NAME="${GITHUB_REPOSITORY}"
+
+          echo "Printing provenance information:"
+          slsa-verifier verify-artifact \
+            --provenance-path "$ATTESTATION_FILE" \
+            --source-uri "github.com/$REPO_NAME" \
+            --source-branch "${{ inputs.branch }}" \
+            --print-provenance \
+            "$IDENTITY_FILE" | jq .
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up temporary directory
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          if [ -d "$TEMP_DIR" ]; then
+            rm -rf "$TEMP_DIR"
+            echo "Temporary directory cleaned up: $TEMP_DIR"
+          fi
