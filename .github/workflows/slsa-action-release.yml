@@ -288,17 +288,16 @@ jobs:
 
           # Verify that the commit SHA in action-identity.json matches the SHA that the tag points to
           echo "Verifying commit SHA in action-identity.json..."
-
+          
           # Get the commit SHA from action-identity.json
           IDENTITY_COMMIT_SHA=$(jq -r '.git.commit' "$IDENTITY_FILE")
-
-          # Get the commit SHA that the tag points to
-          git fetch --tags
-          TAG_COMMIT_SHA=$(git rev-parse "$TAG_NAME")
-
+          
+          # Get the commit SHA that the tag points to using GitHub API
+          TAG_COMMIT_SHA=$(gh api repos/$REPO_NAME/git/refs/tags/$TAG_NAME --jq '.object.sha')
+          
           echo "Commit SHA in action-identity.json: $IDENTITY_COMMIT_SHA"
           echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
-
+          
           # Verify that the commit SHAs match
           if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
             echo "❌ Commit SHA verification failed! The commit SHA in action-identity.json does not match the SHA that the tag points to."
