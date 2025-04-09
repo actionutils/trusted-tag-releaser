@@ -1,4 +1,5 @@
-name: Release Action
+name: Release
+
 
 on:
   push:
@@ -9,8 +10,8 @@ on:
       - labeled  # Run when PRs are labeled
 
 jobs:
-  # Handle PR labeling workflow checks
-  release-check:
+  # Post version bump information comment on PR when labeled
+  bumpr-pr-comment:
     if: github.event.action == 'labeled'
     runs-on: ubuntu-latest
     permissions:
@@ -18,16 +19,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Post bumpr status comment
-        uses: haya14busa/action-bumpr@v1.11.1
+        uses: haya14busa/action-bumpr@v1.11.4
 
-  # Use the reusable SLSA workflow for releases
-  release:
+  # First check if a release is needed
+  check-release:
     if: github.event.action != 'labeled'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/check-release.yml
+
+  # Environment protection job
+  release-approval:
+    needs: [check-release]
+    if: github.event.action != 'labeled' && needs.check-release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: "release-approval"
+      cancel-in-progress: false
+    steps:
+      - name: Approve release
+        run: echo "Release approved in the release environment"
+
+  # Use the reusable SLSA workflow for releases if approved
+  release:
+    needs: [check-release, release-approval]
+    if: github.event.action != 'labeled' && needs.check-release.outputs.skip != 'true'
+    concurrency:
+      group: "release"
+      cancel-in-progress: false
     permissions:
       id-token: write    # Required for SLSA provenance
       contents: write    # Required for release and tag creation
       pull-requests: write # Required for bumpr commenting
       actions: read      # Required for SLSA generator
     uses: ./.github/workflows/slsa-action-release.yml
+    with:
+      branch: ${{ github.event.repository.default_branch }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}

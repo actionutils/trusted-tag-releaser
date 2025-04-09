@@ -1,0 +1,37 @@
+name: Check Release Needed
+
+# This workflow checks if a release is needed based on PR labels
+# It's designed as a reusable workflow that can be called from other workflows
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: 'The working branch'
+        required: false
+        default: ${{ github.event.repository.default_branch }}
+        type: string
+    outputs:
+      skip:
+        description: 'Whether to skip the release'
+        value: ${{ jobs.check-version.outputs.skip }}
+      next_version:
+        description: 'The next version to release'
+        value: ${{ jobs.check-version.outputs.next_version }}
+
+jobs:
+  # Check if a version bump is needed
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.bumpr-dry-run.outputs.skip }}
+      next_version: ${{ steps.bumpr-dry-run.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      # Dry run to check if a version bump is needed
+      - id: bumpr-dry-run
+        uses: haya14busa/action-bumpr@v1.11.4
+        with:
+          dry_run: true
