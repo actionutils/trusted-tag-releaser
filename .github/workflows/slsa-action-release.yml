@@ -237,8 +237,8 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Download the specific attestation file and action-identity.json
-          gh release download "$TAG_NAME" --pattern "action-identity.intoto.jsonl" --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --pattern "action-identity.json" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
