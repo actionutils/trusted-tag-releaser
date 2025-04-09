@@ -213,19 +213,6 @@ jobs:
             echo "Format flag not available for gh attestation verify"
           fi
 
-      - name: Cleanup
-        if: always()
-        run: |
-          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          if [ -d "$TEMP_DIR" ]; then
-            rm -rf "$TEMP_DIR"
-            echo "Temporary directory cleaned up: $TEMP_DIR"
-          fi
-          if [ -f "verify_output.txt" ]; then
-            rm verify_output.txt
-            echo "Output file cleaned up"
-          fi
-          
       - name: Verify attestation (with GH_FORCE_TTY)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -253,3 +240,16 @@ jobs:
           
           # Clean up
           rm -f force_tty_output.txt
+
+      - name: Cleanup
+        if: always()
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          if [ -d "$TEMP_DIR" ]; then
+            rm -rf "$TEMP_DIR"
+            echo "Temporary directory cleaned up: $TEMP_DIR"
+          fi
+          if [ -f "verify_output.txt" ]; then
+            rm verify_output.txt
+            echo "Output file cleaned up"
+          fi
