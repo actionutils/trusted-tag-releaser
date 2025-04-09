@@ -190,6 +190,29 @@ jobs:
             echo "Expected failure occurred with exit code: $?"
           }
 
+      - name: Verify attestation (with JSON format)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Verification with JSON format ==="
+          # Check if --format flag is available
+          if gh attestation verify --help | grep -q -- "--format"; then
+            echo "Using --format json option"
+            gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY --format json | jq .
+            echo "JSON format verification exit code: $?"
+            
+            # Also try with a failing verification
+            echo "=== Failing verification with JSON format ==="
+            gh attestation verify "$IDENTITY_FILE" --repo "github/docs" --format json 2>&1 || {
+              echo "Expected failure occurred with exit code: $?"
+            }
+          else
+            echo "Format flag not available for gh attestation verify"
+          fi
+
       - name: Cleanup
         if: always()
         run: |
