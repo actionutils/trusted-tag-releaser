@@ -237,7 +237,7 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Download the specific attestation file and action-identity.json
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
           gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
@@ -250,7 +250,7 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Use the specific attestation file and identity file
-          ATTESTATION_FILE="$TEMP_DIR/action-identity.intoto.jsonl"
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
 
           if [ -z "$ATTESTATION_FILE" ]; then
@@ -277,7 +277,7 @@ jobs:
       - name: Print provenance
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          ATTESTATION_FILE="$TEMP_DIR/action-identity.intoto.jsonl"
+          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           REPO_NAME="${GITHUB_REPOSITORY}"
 
