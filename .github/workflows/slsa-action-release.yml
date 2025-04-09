@@ -9,7 +9,7 @@ on:
       branch:
         description: 'The working branch'
         required: false
-        default: 'main'
+        default: ${{ github.event.repository.default_branch }}
         type: string
       rekor-log-public:
         description: 'Allow repository name to be logged in public Rekor transparency log'
@@ -45,7 +45,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           ref: ${{ inputs.branch }}
 
       # Set up signed tag configuration
