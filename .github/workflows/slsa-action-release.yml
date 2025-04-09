@@ -152,29 +152,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
           TAG_NAME="${{ needs.version.outputs.tag_name }}"
+          COMMIT_SHA="${{ steps.save-info.outputs.commit_sha }}"
           TEMP_DIR="${{ steps.tempdir-archives.outputs.dir }}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           
-          # Download zip and tar.gz archives using gh CLI
-          echo "Downloading source archives for tag $TAG_NAME..."
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --archive=zip --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --archive=tar.gz --dir "$TEMP_DIR"
+          # Download zip and tar.gz archives using commit hash URL
+          echo "Downloading source archives for commit $COMMIT_SHA..."
+          
+          # URLs for downloading archives by commit hash
+          ZIP_URL="https://github.com/$GITHUB_REPOSITORY/archive/$COMMIT_SHA.zip"
+          TAR_URL="https://github.com/$GITHUB_REPOSITORY/archive/$COMMIT_SHA.tar.gz"
+          
+          # Download archives
+          curl -sL "$ZIP_URL" -o "$TEMP_DIR/$REPO_NAME-$TAG_NAME.zip"
+          curl -sL "$TAR_URL" -o "$TEMP_DIR/$REPO_NAME-$TAG_NAME.tar.gz"
           
           # List downloaded files
           echo "Downloaded archives:"
           ls -la "$TEMP_DIR"
           
-          # Get filenames
-          ZIP_FILE=$(find "$TEMP_DIR" -name "*.zip")
-          TAR_FILE=$(find "$TEMP_DIR" -name "*.tar.gz")
+          # Define filenames for release
+          ZIP_FILENAME="$REPO_NAME-$TAG_NAME.zip"
+          TAR_FILENAME="$REPO_NAME-$TAG_NAME.tar.gz"
           
           # Calculate checksums
-          ZIP_CHECKSUM=$(sha256sum "$ZIP_FILE" | awk '{print $1}')
-          TAR_CHECKSUM=$(sha256sum "$TAR_FILE" | awk '{print $1}')
-          
-          # Get just the filenames without path
-          ZIP_FILENAME=$(basename "$ZIP_FILE")
-          TAR_FILENAME=$(basename "$TAR_FILE")
+          ZIP_CHECKSUM=$(sha256sum "$TEMP_DIR/$ZIP_FILENAME" | awk '{print $1}')
+          TAR_CHECKSUM=$(sha256sum "$TEMP_DIR/$TAR_FILENAME" | awk '{print $1}')
           
           echo "ZIP checksum ($ZIP_FILENAME): $ZIP_CHECKSUM"
           echo "TAR checksum ($TAR_FILENAME): $TAR_CHECKSUM"
