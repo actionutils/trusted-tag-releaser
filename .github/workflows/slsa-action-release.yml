@@ -113,6 +113,11 @@ jobs:
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
       # Generate action-identity.json file for SLSA verification
+      # Note: We intentionally do not include source code archives (zip/tar.gz) in the SLSA provenance
+      # because GitHub does not guarantee their stability over time:
+      # - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives#stability-of-source-code-archives
+      # - https://github.blog/open-source/git/update-on-the-future-stability-of-source-code-archives-and-hashes/
+      # Instead, we include the commit SHA in action-identity.json and verify that it matches the SHA that the tag points to.
       - name: Generate action identity file
         id: generate-metadata
         run: |
@@ -244,6 +249,10 @@ jobs:
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
 
+      # Verify provenance and commit SHA
+      # Since we don't include source code archives in the SLSA provenance due to their instability,
+      # we instead verify that the commit SHA in action-identity.json matches the SHA that the tag points to.
+      # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
       - name: Verify provenance and commit SHA
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
