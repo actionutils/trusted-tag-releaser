@@ -97,12 +97,6 @@ jobs:
       tag_name: ${{ steps.save-info.outputs.tag_name }}
       base64-subjects: ${{ steps.generate-subjects.outputs.base64-subjects }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.version.outputs.tag_name }}
-
       # Save commit info for SLSA provenance
       - name: Save commit info
         id: save-info
@@ -164,8 +158,7 @@ jobs:
 
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-name: action-identity.json
-          subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
+          subject-path: action-identity.json
 
   # Generate SLSA provenance using reusable workflow
   generate-provenance:
