@@ -168,6 +168,27 @@ jobs:
           # Set GH_DEBUG to enable detailed output
           gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
           echo "Verification with debug env exit code: $?"
+      
+      - name: Verify attestation (intentionally failing)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          
+          echo "=== Intentionally failing verification ==="
+          echo "Using wrong repository to force failure and see error output"
+          
+          # Use a different repository to force verification failure
+          gh attestation verify "$IDENTITY_FILE" --repo "github/docs" || {
+            echo "Expected failure occurred with exit code: $?"
+          }
+          
+          # Try with stderr redirection to see if errors are shown
+          echo "=== Failing verification with stderr capture ==="
+          gh attestation verify "$IDENTITY_FILE" --repo "github/docs" 2>&1 || {
+            echo "Expected failure occurred with exit code: $?"
+          }
 
       - name: Cleanup
         if: always()
