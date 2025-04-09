@@ -25,9 +25,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Get the latest release tag
-          LATEST_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 | awk '{print $1}')
+          LATEST_RELEASE=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 --json tagName,name -q '.[0]')
+          if [ -z "$LATEST_RELEASE" ]; then
+            echo "Error: No releases found in the repository"
+            exit 1
+          fi
+          
+          # Extract tag name using jq
+          LATEST_TAG=$(echo $LATEST_RELEASE | jq -r '.tagName')
           echo "Latest release tag: $LATEST_TAG"
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          
+          # Also print release name for debugging
+          RELEASE_NAME=$(echo $LATEST_RELEASE | jq -r '.name')
+          echo "Release name: $RELEASE_NAME"
 
       - name: Create temporary directory
         id: tempdir
@@ -44,14 +55,61 @@ jobs:
           TAG="${{ steps.latest-release.outputs.tag }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           
+          if [ -z "$TAG" ]; then
+            echo "Error: No tag name available"
+            exit 1
+          fi
+          
           echo "Downloading files from release: $TAG"
           
+          # List available assets for debugging
+          echo "Available release assets:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'
+          
           # Download action-identity.json and related attestation files
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR" || {
+            echo "Warning: Failed to download action-identity.json, checking for alternative locations"
+            # Try to find in subdirectories if direct download fails
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*/action-identity.json" --dir "$TEMP_DIR" || true
+          }
+          
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*.intoto.jsonl" --dir "$TEMP_DIR" || {
+            echo "Warning: Failed to download attestation files, checking for alternative locations"
+            # Try to find in subdirectories if direct download fails
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*/*.intoto.jsonl" --dir "$TEMP_DIR" || true
+          }
           
           echo "Downloaded files:"
           ls -la "$TEMP_DIR"
+          
+          # Check if we have the necessary files
+          if [ ! -f "$TEMP_DIR/action-identity.json" ] && [ ! -f "$TEMP_DIR"/*"/action-identity.json" ]; then
+            echo "Error: Could not find action-identity.json in downloaded files"
+            exit 1
+          fi
+          
+          # Find the actual path to action-identity.json
+          IDENTITY_FILE=$(find "$TEMP_DIR" -name "action-identity.json" | head -n 1)
+          echo "Found identity file at: $IDENTITY_FILE"
+          
+          # Copy to the expected location if it's in a subdirectory
+          if [ "$IDENTITY_FILE" != "$TEMP_DIR/action-identity.json" ]; then
+            cp "$IDENTITY_FILE" "$TEMP_DIR/action-identity.json"
+            echo "Copied identity file to: $TEMP_DIR/action-identity.json"
+          fi
+          
+          # Find attestation file
+          ATTESTATION_FILE=$(find "$TEMP_DIR" -name "*.intoto.jsonl" | head -n 1)
+          if [ -n "$ATTESTATION_FILE" ]; then
+            echo "Found attestation file at: $ATTESTATION_FILE"
+            # Copy to the expected location if needed
+            if [ "$ATTESTATION_FILE" != "$TEMP_DIR/action-identity.json.intoto.jsonl" ]; then
+              cp "$ATTESTATION_FILE" "$TEMP_DIR/action-identity.json.intoto.jsonl"
+              echo "Copied attestation file to: $TEMP_DIR/action-identity.json.intoto.jsonl"
+            fi
+          else
+            echo "Warning: No attestation file found"
+          fi
 
       - name: Verify attestation (standard output)
         env:
