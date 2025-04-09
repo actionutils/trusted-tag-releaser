@@ -15,14 +15,16 @@ jobs:
 
       - name: Setup GitHub CLI
         run: |
-          # GitHub CLIは最新のUbuntuランナーにはプリインストールされていますが、
-          # 念のため最新バージョンを確認
+          # GitHub CLI is pre-installed on the latest Ubuntu runners,
+          # but check the version just to be sure
           gh --version
 
       - name: Get latest release
         id: latest-release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # 最新のリリースタグを取得
+          # Get the latest release tag
           LATEST_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 | awk '{print $1}')
           echo "Latest release tag: $LATEST_TAG"
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
@@ -30,19 +32,21 @@ jobs:
       - name: Create temporary directory
         id: tempdir
         run: |
-          # 一時ディレクトリを作成
+          # Create a temporary directory
           TEMP_DIR=$(mktemp -d)
           echo "dir=$TEMP_DIR" >> $GITHUB_OUTPUT
           echo "Created temporary directory: $TEMP_DIR"
 
       - name: Download attestation files
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.latest-release.outputs.tag }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           
           echo "Downloading files from release: $TAG"
           
-          # action-identity.json と関連する attestation ファイルをダウンロード
+          # Download action-identity.json and related attestation files
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
           
@@ -50,6 +54,8 @@ jobs:
           ls -la "$TEMP_DIR"
 
       - name: Verify attestation (standard output)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
@@ -60,6 +66,8 @@ jobs:
           echo "Standard verification exit code: $?"
 
       - name: Verify attestation (with output redirection)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
@@ -73,12 +81,14 @@ jobs:
           echo "Verification with redirection exit code: $VERIFY_EXIT_CODE"
 
       - name: Verify attestation (with verbose flag if available)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           
           echo "=== Verification with verbose flag ==="
-          # --verboseフラグが利用可能かどうか確認
+          # Check if --verbose flag is available
           if gh attestation verify --help | grep -q -- "--verbose"; then
             gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY --verbose
           else
@@ -89,13 +99,15 @@ jobs:
           echo "Verification with verbose flag exit code: $?"
 
       - name: Verify attestation (with debug environment variable)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_DEBUG: 1
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           
           echo "=== Verification with debug environment variable ==="
-          # GH_DEBUGを設定して詳細出力を有効化
-          export GH_DEBUG=1
+          # Set GH_DEBUG to enable detailed output
           gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
           echo "Verification with debug env exit code: $?"
 
