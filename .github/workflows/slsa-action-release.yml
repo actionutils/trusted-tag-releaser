@@ -327,16 +327,13 @@ jobs:
             --print-provenance \
             "$IDENTITY_FILE" 2>/dev/null | jq .
 
-      # Verify build provenance attestation using gh attestation verify
       - name: Verify build provenance attestation (gh attestation verify)
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          # Verify the attestation for action-identity.json
+          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
           echo "Verifying build provenance attestation for action-identity.json"
           gh attestation verify action-identity.json --repo $GITHUB_REPOSITORY
-
-          echo "✅ Build provenance attestation verification successful!"
 
       - name: Cleanup
         if: always()
