@@ -56,7 +56,5 @@ jobs:
       actions: read      # Required for SLSA generator
       attestations: write # Required for build provenance attestation
     uses: ./.github/workflows/slsa-action-release.yml
-    with:
-      branch: ${{ github.event.repository.default_branch }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}

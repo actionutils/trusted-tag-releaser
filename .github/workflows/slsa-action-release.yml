@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: true
+      draft:
+        description: 'Whether to keep the release as a draft'
+        required: false
+        type: boolean
+        default: false
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -212,7 +217,7 @@ jobs:
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --notes "$(gh release view "$TAG_NAME" --json body -q .body || echo "")" \
-            --draft=false)
+            --draft=${{ inputs.draft }})
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
