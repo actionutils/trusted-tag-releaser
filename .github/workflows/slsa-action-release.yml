@@ -212,7 +212,7 @@ jobs:
 
   # Verify the release using SLSA verifier
   verify-release:
-    needs: [release]
+    needs: [release, prepare-slsa]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
