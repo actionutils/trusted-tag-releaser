@@ -332,8 +332,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
+          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
           echo "Verifying build provenance attestation for action-identity.json"
-          gh attestation verify action-identity.json --repo $GITHUB_REPOSITORY
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
 
       - name: Cleanup
         if: always()
