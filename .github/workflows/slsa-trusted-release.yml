@@ -1,6 +1,6 @@
-name: SLSA Compliant GitHub Action Release
+name: SLSA Compliant Trusted Tag Release
 
-# This workflow creates a SLSA-compliant release for GitHub Actions
+# This workflow creates a SLSA-compliant release for GitHub repositories
 # It's designed as a reusable workflow that can be called from other workflows
 # It enforces releases only through labeled PRs (bump:patch, bump:minor, bump:major)
 on:
@@ -114,25 +114,25 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
-      # Generate action-identity.json file for SLSA verification
+      # Generate release-identity.json file for SLSA verification
       # Note: We intentionally do not include source code archives (zip/tar.gz) in the SLSA provenance
       # because GitHub does not guarantee their stability over time:
       # - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives#stability-of-source-code-archives
       # - https://github.blog/open-source/git/update-on-the-future-stability-of-source-code-archives-and-hashes/
-      # Instead, we include the commit SHA in action-identity.json and verify that it matches the SHA that the tag points to.
-      - name: Generate action identity file
+      # Instead, we include the commit SHA in release-identity.json and verify that it matches the SHA that the tag points to.
+      - name: Generate release identity file
         id: generate-metadata
         run: |
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Create action-identity.json file
-          cat > action-identity.json << EOF
+          # Create release-identity.json file
+          cat > release-identity.json << EOF
           {
             "name": "$REPO_NAME",
             "version": "${{ needs.version.outputs.tag_name }}",
             "timestamp": "$TIMESTAMP",
-            "description": "This file contains identity information about this GitHub Action release. It can be verified with the action-identity.intoto.jsonl file to confirm the authenticity and build source of this action.",
+            "description": "This file contains identity information about this GitHub release. It can be verified with the release-identity.intoto.jsonl file to confirm the authenticity and build source of this release.",
             "git": {
               "commit": "${{ github.sha }}",
               "tag": "${{ needs.version.outputs.tag_name }}",
@@ -141,7 +141,7 @@ jobs:
           }
           EOF
 
-          echo "Generated action-identity.json"
+          echo "Generated release-identity.json"
 
       # Generate base64-subjects directly
       - name: Generate subjects
@@ -149,21 +149,21 @@ jobs:
         run: |
           # sha256sum generates output in format "<hash> <filename>" which is exactly what we need
           # base64 -w0 encodes to base64 and outputs on a single line
-          echo "base64-subjects=$(sha256sum action-identity.json | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "base64-subjects=$(sha256sum release-identity.json | base64 -w0)" >> $GITHUB_OUTPUT
 
 
-      # Upload action-identity.json as an artifact to share between jobs
-      - name: Upload action identity artifact
-        id: upload
+      # Upload release-identity.json as an artifact to share between jobs
+      - name: Upload release identity artifact
+        id: upload-identity
         uses: actions/upload-artifact@v4
         with:
-          name: action-identity-json
-          path: action-identity.json
+          name: release-identity-json
+          path: release-identity.json
           retention-days: 1
 
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-path: action-identity.json
+          subject-path: release-identity.json
 
   # Generate SLSA provenance using reusable workflow
   generate-provenance:
@@ -197,10 +197,10 @@ jobs:
 
       # Download the artifacts from previous jobs
 
-      - name: Download action-identity.json
+      - name: Download release-identity.json
         uses: actions/download-artifact@v4
         with:
-          name: action-identity-json
+          name: release-identity-json
 
       # Update existing draft release
       - name: Update GitHub Release
@@ -211,7 +211,7 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
 
           # Upload artifacts to the release
-          gh release upload "$TAG_NAME" action-identity.json --clobber
+          gh release upload "$TAG_NAME" release-identity.json --clobber
 
           # Update the existing draft release
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
@@ -248,18 +248,18 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Download the specific attestation file and action-identity.json
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "action-identity.json" --dir "$TEMP_DIR"
+          # Download the specific attestation file and release-identity.json
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.json" --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
 
       # Verify provenance and commit SHA
       # Since we don't include source code archives in the SLSA provenance due to their instability,
-      # we instead verify that the commit SHA in action-identity.json matches the SHA that the tag points to.
+      # we instead verify that the commit SHA in release-identity.json matches the SHA that the tag points to.
       # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
-      - name: Verify SLSA provenance and commit SHA (slsa-verifier)
+      - name: Verify SLSA provenance and commit SHA
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
@@ -268,8 +268,8 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Use the specific attestation file and identity file
-          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
-          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          ATTESTATION_FILE="$TEMP_DIR/release-identity.json.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
 
           if [ -z "$ATTESTATION_FILE" ]; then
             echo "Error: No attestation file found"
@@ -277,7 +277,7 @@ jobs:
           fi
 
           if [ -z "$IDENTITY_FILE" ]; then
-            echo "Error: No action-identity.json file found"
+            echo "Error: No release-identity.json file found"
             exit 1
           fi
 
@@ -292,10 +292,10 @@ jobs:
 
           echo "✅ Provenance verification successful!"
 
-          # Verify that the commit SHA in action-identity.json matches the SHA that the tag points to
-          echo "Verifying commit SHA in action-identity.json..."
+          # Verify that the commit SHA in release-identity.json matches the SHA that the tag points to
+          echo "Verifying commit SHA in release-identity.json..."
 
-          # Get the commit SHA from action-identity.json
+          # Get the commit SHA from release-identity.json
           IDENTITY_COMMIT_SHA=$(jq -r '.git.commit' "$IDENTITY_FILE")
 
           # Get the commit SHA that the tag points to using GitHub API
@@ -306,12 +306,12 @@ jobs:
           # Then, get the commit SHA that the tag points to
           TAG_COMMIT_SHA=$(gh api repos/$REPO_NAME/git/tags/$TAG_SHA --jq '.object.sha')
 
-          echo "Commit SHA in action-identity.json: $IDENTITY_COMMIT_SHA"
+          echo "Commit SHA in release-identity.json: $IDENTITY_COMMIT_SHA"
           echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
 
           # Verify that the commit SHAs match
           if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
-            echo "❌ Commit SHA verification failed! The commit SHA in action-identity.json does not match the SHA that the tag points to."
+            echo "❌ Commit SHA verification failed! The commit SHA in release-identity.json does not match the SHA that the tag points to."
             exit 1
           fi
 
@@ -320,8 +320,8 @@ jobs:
       - name: Print provenance
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          ATTESTATION_FILE="$TEMP_DIR/action-identity.json.intoto.jsonl"
-          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
+          ATTESTATION_FILE="$TEMP_DIR/release-identity.json.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
           REPO_NAME="${GITHUB_REPOSITORY}"
 
           echo "Printing provenance information:"
@@ -332,14 +332,14 @@ jobs:
             --print-provenance \
             "$IDENTITY_FILE" 2>/dev/null | jq .
 
-      - name: Verify build provenance attestation (gh attestation verify)
+      - name: Verify build provenance attestation
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
           GH_FORCE_TTY: 1
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          IDENTITY_FILE="$TEMP_DIR/action-identity.json"
-          echo "Verifying build provenance attestation for action-identity.json"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
+          echo "Verifying build provenance attestation for release-identity.json"
 
           gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
 
