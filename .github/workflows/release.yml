@@ -1,4 +1,4 @@
-name: Release
+name: Trusted Tag Release
 
 
 on:
@@ -42,7 +42,7 @@ jobs:
       - name: Approve release
         run: echo "Release approved in the release environment"
 
-  # Use the reusable SLSA workflow for releases if approved
+  # Use the reusable SLSA trusted tag workflow for releases if approved
   release:
     needs: [check-release, release-approval]
     if: github.event.action != 'labeled' && needs.check-release.outputs.skip != 'true'
@@ -55,6 +55,6 @@ jobs:
       pull-requests: write # Required for bumpr commenting
       actions: read      # Required for SLSA generator
       attestations: write # Required for build provenance attestation
-    uses: ./.github/workflows/slsa-action-release.yml
+    uses: ./.github/workflows/slsa-trusted-release.yml
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}

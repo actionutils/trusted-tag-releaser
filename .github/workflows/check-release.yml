@@ -1,6 +1,6 @@
-name: Check Release Needed
+name: Check Tag Release Needed
 
-# This workflow checks if a release is needed based on PR labels
+# This workflow checks if a tag release is needed based on PR labels
 # It's designed as a reusable workflow that can be called from other workflows
 on:
   workflow_call:
