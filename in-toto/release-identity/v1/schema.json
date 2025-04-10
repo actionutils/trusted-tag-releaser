@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReleaseIdentityPredicate",
+  "description": "Predicate for release identity information",
+  "type": "object",
+  "required": ["version", "created_at", "git"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The semantic version tag of the release"
+    },
+    "created_at": {
+      "type": "integer",
+      "description": "Unix timestamp (seconds since epoch) when the attestation was generated during release"
+    },
+    "git": {
+      "type": "object",
+      "required": ["tag", "repository"],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "The Git tag name for the release"
+        },
+        "repository": {
+          "type": "string",
+          "description": "The GitHub repository URL",
+          "format": "uri"
+        }
+      }
+    }
+  }
+}
