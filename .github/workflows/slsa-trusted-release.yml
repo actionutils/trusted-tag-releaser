@@ -114,34 +114,43 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
-      # Generate release-identity.json file for SLSA verification
+      # Generate release-identity.intoto.jsonl file for SLSA verification
       # Note: We intentionally do not include source code archives (zip/tar.gz) in the SLSA provenance
       # because GitHub does not guarantee their stability over time:
       # - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives#stability-of-source-code-archives
       # - https://github.blog/open-source/git/update-on-the-future-stability-of-source-code-archives-and-hashes/
-      # Instead, we include the commit SHA in release-identity.json and verify that it matches the SHA that the tag points to.
+      # Instead, we include the commit SHA in release-identity.intoto.jsonl and verify that it matches the SHA that the tag points to.
       - name: Generate release identity file
         id: generate-metadata
         run: |
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CREATED_AT=$(date +%s)  # Unix timestamp (seconds since epoch)
 
-          # Create release-identity.json file
-          cat > release-identity.json << EOF
+          # Create release-identity.intoto.jsonl file using in-toto Statement format
+          cat > release-identity.intoto.jsonl << EOF
           {
-            "name": "$REPO_NAME",
-            "version": "${{ needs.version.outputs.tag_name }}",
-            "timestamp": "$TIMESTAMP",
-            "description": "This file contains identity information about this GitHub release. It can be verified with the release-identity.intoto.jsonl file to confirm the authenticity and build source of this release.",
-            "git": {
-              "commit": "${{ github.sha }}",
-              "tag": "${{ needs.version.outputs.tag_name }}",
-              "repository": "https://github.com/$GITHUB_REPOSITORY"
+            "_type": "https://in-toto.io/Statement/v0.1",
+            "predicateType": "https://github.com/actionutils/trusted-tag-releaser/in-toto/release-identity/v1",
+            "subject": [
+              {
+                "name": "$REPO_NAME",
+                "digest": {
+                  "git": "${{ github.sha }}"
+                }
+              }
+            ],
+            "predicate": {
+              "version": "${{ needs.version.outputs.tag_name }}",
+              "created_at": $CREATED_AT,
+              "git": {
+                "tag": "${{ needs.version.outputs.tag_name }}",
+                "repository": "https://github.com/$GITHUB_REPOSITORY"
+              }
             }
           }
           EOF
 
-          echo "Generated release-identity.json"
+          echo "Generated release-identity.intoto.jsonl"
 
       # Generate base64-subjects directly
       - name: Generate subjects
@@ -149,21 +158,21 @@ jobs:
         run: |
           # sha256sum generates output in format "<hash> <filename>" which is exactly what we need
           # base64 -w0 encodes to base64 and outputs on a single line
-          echo "base64-subjects=$(sha256sum release-identity.json | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "base64-subjects=$(sha256sum release-identity.intoto.jsonl | base64 -w0)" >> $GITHUB_OUTPUT
 
 
-      # Upload release-identity.json as an artifact to share between jobs
+      # Upload release-identity.intoto.jsonl as an artifact to share between jobs
       - name: Upload release identity artifact
         id: upload-identity
         uses: actions/upload-artifact@v4
         with:
-          name: release-identity-json
-          path: release-identity.json
+          name: release-identity-intoto
+          path: release-identity.intoto.jsonl
           retention-days: 1
 
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-path: release-identity.json
+          subject-path: release-identity.intoto.jsonl
 
   # Generate SLSA provenance using reusable workflow
   generate-provenance:
@@ -179,6 +188,7 @@ jobs:
       upload-assets: true
       upload-tag-name: ${{ needs.version.outputs.tag_name }}
       draft-release: true
+      provenance-name: provenance.intoto.jsonl
 
   # Create GitHub Release job
   release:
@@ -197,10 +207,10 @@ jobs:
 
       # Download the artifacts from previous jobs
 
-      - name: Download release-identity.json
+      - name: Download release-identity.intoto.jsonl
         uses: actions/download-artifact@v4
         with:
-          name: release-identity-json
+          name: release-identity-intoto
 
       # Update existing draft release
       - name: Update GitHub Release
@@ -211,7 +221,7 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
 
           # Upload artifacts to the release
-          gh release upload "$TAG_NAME" release-identity.json --clobber
+          gh release upload "$TAG_NAME" release-identity.intoto.jsonl --clobber
 
           # Update the existing draft release
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
@@ -248,16 +258,16 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Download the specific attestation file and release-identity.json
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.json.intoto.jsonl" --dir "$TEMP_DIR"
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.json" --dir "$TEMP_DIR"
+          # Download the specific attestation file and release-identity.intoto.jsonl
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "provenance.intoto.jsonl" --dir "$TEMP_DIR"
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.intoto.jsonl" --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
 
       # Verify provenance and commit SHA
       # Since we don't include source code archives in the SLSA provenance due to their instability,
-      # we instead verify that the commit SHA in release-identity.json matches the SHA that the tag points to.
+      # we instead verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to.
       # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
       - name: Verify SLSA provenance and commit SHA
         env:
@@ -268,8 +278,8 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Use the specific attestation file and identity file
-          ATTESTATION_FILE="$TEMP_DIR/release-identity.json.intoto.jsonl"
-          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
+          ATTESTATION_FILE="$TEMP_DIR/provenance.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
 
           if [ -z "$ATTESTATION_FILE" ]; then
             echo "Error: No attestation file found"
@@ -277,7 +287,7 @@ jobs:
           fi
 
           if [ -z "$IDENTITY_FILE" ]; then
-            echo "Error: No release-identity.json file found"
+            echo "Error: No release-identity.intoto.jsonl file found"
             exit 1
           fi
 
@@ -292,11 +302,11 @@ jobs:
 
           echo "✅ Provenance verification successful!"
 
-          # Verify that the commit SHA in release-identity.json matches the SHA that the tag points to
-          echo "Verifying commit SHA in release-identity.json..."
+          # Verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to
+          echo "Verifying commit SHA in release-identity.intoto.jsonl..."
 
-          # Get the commit SHA from release-identity.json
-          IDENTITY_COMMIT_SHA=$(jq -r '.git.commit' "$IDENTITY_FILE")
+          # Get the commit SHA from release-identity.intoto.jsonl
+          IDENTITY_COMMIT_SHA=$(jq -r '.subject[0].digest.git' "$IDENTITY_FILE")
 
           # Get the commit SHA that the tag points to using GitHub API
           # First, get the tag SHA
@@ -306,12 +316,12 @@ jobs:
           # Then, get the commit SHA that the tag points to
           TAG_COMMIT_SHA=$(gh api repos/$REPO_NAME/git/tags/$TAG_SHA --jq '.object.sha')
 
-          echo "Commit SHA in release-identity.json: $IDENTITY_COMMIT_SHA"
+          echo "Commit SHA in release-identity.intoto.jsonl: $IDENTITY_COMMIT_SHA"
           echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
 
           # Verify that the commit SHAs match
           if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
-            echo "❌ Commit SHA verification failed! The commit SHA in release-identity.json does not match the SHA that the tag points to."
+            echo "❌ Commit SHA verification failed! The commit SHA in release-identity.intoto.jsonl does not match the SHA that the tag points to."
             exit 1
           fi
 
@@ -320,8 +330,8 @@ jobs:
       - name: Print provenance
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          ATTESTATION_FILE="$TEMP_DIR/release-identity.json.intoto.jsonl"
-          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
+          ATTESTATION_FILE="$TEMP_DIR/provenance.intoto.jsonl"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
           REPO_NAME="${GITHUB_REPOSITORY}"
 
           echo "Printing provenance information:"
@@ -338,8 +348,8 @@ jobs:
           GH_FORCE_TTY: 1
         run: |
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          IDENTITY_FILE="$TEMP_DIR/release-identity.json"
-          echo "Verifying build provenance attestation for release-identity.json"
+          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
+          echo "Verifying build provenance attestation for release-identity.intoto.jsonl"
 
           gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
 

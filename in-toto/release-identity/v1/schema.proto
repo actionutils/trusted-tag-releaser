@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package actionutils.trusted_tag_releaser.in_toto.release_identity.v1;
+
+// ReleaseIdentityPredicate defines the structure for release identity information
+// in the in-toto attestation framework.
+message ReleaseIdentityPredicate {
+  // The semantic version tag of the release
+  string version = 1;
+  
+  // Unix timestamp (seconds since epoch) when the attestation was generated during release
+  int64 created_at = 2;
+  
+  // Git-specific information about the release
+  GitInfo git = 3;
+  
+  // GitInfo contains Git repository and tag information
+  message GitInfo {
+    // The Git tag name for the release
+    string tag = 1;
+    
+    // The GitHub repository URL
+    string repository = 2;
+  }
+}
