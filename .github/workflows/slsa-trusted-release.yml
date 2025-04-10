@@ -130,7 +130,7 @@ jobs:
           cat > release-identity.intoto.jsonl << EOF
           {
             "_type": "https://in-toto.io/Statement/v0.1",
-            "predicateType": "https://github.com/actionutils/trusted-tag-releaser/in-toto/release-identity/v1",
+            "predicateType": "https://github.com/actionutils/trusted-tag-releaser/tree/main/in-toto/release-identity/v1",
             "subject": [
               {
                 "name": "$REPO_NAME",

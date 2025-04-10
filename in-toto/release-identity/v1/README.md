@@ -1,6 +1,6 @@
 # Predicate type: Release Identity
 
-Type URI: `https://github.com/actionutils/trusted-tag-releaser/in-toto/release-identity/v1`
+Type URI: `https://github.com/actionutils/trusted-tag-releaser/tree/main/in-toto/release-identity/v1`
 
 Version: 1
 
@@ -84,7 +84,7 @@ The standard in-toto Statement fields apply:
 
 #### Predicate Fields
 
-- `predicateType`: MUST be `https://github.com/actionutils/trusted-tag-releaser/in-toto/release-identity/v1`
+- `predicateType`: MUST be `https://github.com/actionutils/trusted-tag-releaser/tree/main/in-toto/release-identity/v1`
 - `predicate`: An object with the following fields:
   - `version` (required, string): The semantic version tag of the release
   - `created_at` (required, integer): Unix timestamp (seconds since epoch) when the attestation was generated during release
@@ -97,7 +97,7 @@ The standard in-toto Statement fields apply:
 ```json
 {
   "_type": "https://in-toto.io/Statement/v0.1",
-  "predicateType": "https://github.com/actionutils/trusted-tag-releaser/in-toto/release-identity/v1",
+  "predicateType": "https://github.com/actionutils/trusted-tag-releaser/tree/main/in-toto/release-identity/v1",
   "subject": [
     {
       "name": "trusted-tag-releaser",
