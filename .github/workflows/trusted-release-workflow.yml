@@ -226,6 +226,7 @@ jobs:
           # Update the existing draft release
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
+            --generate-notes
             --notes "$(gh release view "$TAG_NAME" --json body -q .body || echo "")" \
             --draft=${{ inputs.draft }})
 
