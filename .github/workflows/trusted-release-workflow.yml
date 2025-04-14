@@ -220,15 +220,11 @@ jobs:
         run: |
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
 
-          # Upload artifacts to the release
-          gh release upload "$TAG_NAME" release-identity.intoto.jsonl --clobber
-
-          # Update the existing draft release
           RELEASE_URL=$(gh release create "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --generate-notes \
-            --notes "$(gh release view "$TAG_NAME" --json body -q .body || echo "")" \
             --draft=${{ inputs.draft }})
+            release-identity.intoto.jsonl
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
