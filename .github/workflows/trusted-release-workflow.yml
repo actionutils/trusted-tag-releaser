@@ -237,8 +237,7 @@ jobs:
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --draft=${{ inputs.draft }} \
-            --notes "$RELEASE_NOTES" \
-            release-identity.intoto.jsonl)
+            --notes "$RELEASE_NOTES")
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
