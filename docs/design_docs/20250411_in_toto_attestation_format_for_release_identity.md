@@ -164,7 +164,7 @@ Field descriptions:
 ## Implementation Plan
 
 1. Create a new branch from the current PR
-2. Update the JSON generation in `slsa-trusted-release.yml` to use the new format
+2. Update the JSON generation in `trusted-release-workflow.yml` to use the new format
 3. Update the verification logic to handle the new format
 4. Add documentation about the in-toto compatibility
 5. Test the changes with the existing verification workflow

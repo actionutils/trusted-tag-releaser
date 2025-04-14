@@ -1,4 +1,4 @@
-name: SLSA Compliant Trusted Tag Release
+name: Trusted Release Workflow
 
 # This workflow creates a SLSA-compliant release for GitHub repositories
 # It's designed as a reusable workflow that can be called from other workflows
