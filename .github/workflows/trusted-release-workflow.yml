@@ -212,8 +212,8 @@ jobs:
         with:
           name: release-identity-intoto
 
-      # Update existing draft release
-      - name: Update GitHub Release
+      # Create release
+      - name: Create GitHub Release
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
@@ -224,9 +224,10 @@ jobs:
           gh release upload "$TAG_NAME" release-identity.intoto.jsonl --clobber
 
           # Update the existing draft release
-          RELEASE_URL=$(gh release edit "$TAG_NAME" \
+          RELEASE_URL=$(gh release create "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --generate-notes
+            --verify-tag
             --notes "$(gh release view "$TAG_NAME" --json body -q .body || echo "")" \
             --draft=${{ inputs.draft }})
 
