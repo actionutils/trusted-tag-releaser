@@ -226,11 +226,15 @@ jobs:
 
           # Generate release notes using GitHub API
           echo "Generating release notes using GitHub API..."
+          # Get the current version from bumpr output
+          CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
+
           RELEASE_NOTES=$(gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
             "/repos/${REPO}/releases/generate-notes" \
             -f tag_name="$TAG_NAME" \
+            -f previous_tag_name="$CURRENT_VERSION" \
             --jq '.body')
 
           # Update release with generated notes

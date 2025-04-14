@@ -98,6 +98,7 @@ jobs:
                 "/repos/${REPO}/releases/generate-notes" \
                 -f target_commitish="${{ github.sha }}" \
                 -f tag_name="$NEXT_VERSION" \
+                -f previous_tag_name="$CURRENT_VERSION" \
                 --jq '.body')
 
               # Add the generated release notes to the summary
