@@ -28,6 +28,8 @@ jobs:
   # Check if a version bump is needed
   check-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for GitHub's generate-release-note API (notes are only displayed in job summary, not written to any file)
     outputs:
       skip: ${{ steps.bumpr-dry-run.outputs.skip }}
       next_version: ${{ steps.bumpr-dry-run.outputs.next_version }}
