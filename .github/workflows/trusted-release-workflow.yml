@@ -229,13 +229,12 @@ jobs:
           # Get the current version from bumpr output
           CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
           
-          # Set previous_tag_name parameter if current version exists
-          PREV_TAG_PARAM=""
+          # Set previous_tag_name parameter (empty string if no current version)
           if [[ -n "$CURRENT_VERSION" ]]; then
             echo "Using previous tag: $CURRENT_VERSION for release notes"
-            PREV_TAG_PARAM="-f previous_tag_name=\"$CURRENT_VERSION\""
           else
-            echo "No previous version found, generating release notes without previous_tag_name"
+            echo "No previous version found, using empty string for previous_tag_name"
+            CURRENT_VERSION=""
           fi
           
           # Call the API with the parameters
@@ -244,7 +243,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "/repos/${REPO}/releases/generate-notes" \
             -f tag_name="$TAG_NAME" \
-            $PREV_TAG_PARAM \
+            -f previous_tag_name="$CURRENT_VERSION" \
             --jq '.body')
 
           # Update release with generated notes
