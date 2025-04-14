@@ -227,7 +227,6 @@ jobs:
           RELEASE_URL=$(gh release create "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --generate-notes \
-            --verify-tag \
             --notes "$(gh release view "$TAG_NAME" --json body -q .body || echo "")" \
             --draft=${{ inputs.draft }})
 
