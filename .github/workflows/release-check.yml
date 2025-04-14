@@ -1,4 +1,4 @@
-name: Check Tag Release Needed
+name: Release Check
 
 # This workflow checks if a tag release is needed based on PR labels
 # It's designed as a reusable workflow that can be called from other workflows
@@ -43,12 +43,12 @@ jobs:
         uses: haya14busa/action-bumpr@v1.11.4
         with:
           dry_run: true
-          
+
       # Add release information to job summary
       - name: Add release information to job summary
         run: |
           echo "# Release Check Summary" >> $GITHUB_STEP_SUMMARY
-          
+
           if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
             echo "## ⚠️ No Release Needed" >> $GITHUB_STEP_SUMMARY
             echo "No version bump label was found on the PR. Release will be skipped." >> $GITHUB_STEP_SUMMARY
@@ -56,14 +56,14 @@ jobs:
             echo "## ✅ Release Needed" >> $GITHUB_STEP_SUMMARY
             echo "A version bump label was found. The following release will be created:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
+
             # Use action-bumpr outputs with better formatting
             if [[ "${{ steps.bumpr-dry-run.outputs.next_version }}" != "" ]]; then
               CURRENT_VERSION="${{ steps.bumpr-dry-run.outputs.current_version }}"
               NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
               REPO_URL="https://github.com/${{ github.repository }}"
               COMPARE_URL="$REPO_URL/compare/$CURRENT_VERSION...${{ github.sha }}"
-              
+
               # Create a more visually appealing format with emojis
               echo "### Release Details" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
@@ -71,13 +71,13 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "📦 **Current Version:** \`$CURRENT_VERSION\`" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              
+
               # Add tag message if available
               if [[ "${{ steps.bumpr-dry-run.outputs.message }}" != "" ]]; then
                 echo "📝 **Tag Message:** ${{ steps.bumpr-dry-run.outputs.message }}" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
               fi
-              
+
               # Add GitHub compare link
               echo "📊 **Changes:** [View changes since $CURRENT_VERSION]($COMPARE_URL)" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY

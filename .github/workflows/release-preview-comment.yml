@@ -1,0 +1,31 @@
+name: Release Preview Comment
+
+# This workflow posts a comment on PRs with information about the next release version when labeled
+# It's designed as a reusable workflow that can be called from other workflows
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'The git ref to checkout'
+        required: false
+        type: string
+        default: ${{ github.ref }}
+    secrets:
+      github-token:
+        description: 'GitHub token with pull-requests:write permission'
+        required: true
+
+jobs:
+  # Post version bump information comment on PR when labeled
+  preview-comment:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Post release preview comment
+        uses: haya14busa/action-bumpr@v1.11.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}

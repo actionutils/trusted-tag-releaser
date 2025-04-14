@@ -1,4 +1,4 @@
-name: Trusted Tag Release
+name: Release
 
 
 on:
@@ -11,41 +11,39 @@ on:
 
 jobs:
   # Post version bump information comment on PR when labeled
-  bumpr-pr-comment:
+  release-preview-comment:
     if: github.event.action == 'labeled'
-    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Post bumpr status comment
-        uses: haya14busa/action-bumpr@v1.11.4
+    uses: ./.github/workflows/release-preview-comment.yml
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # First check if a release is needed
-  check-release:
+  release-check:
     if: github.event.action != 'labeled'
     permissions:
       contents: read
       pull-requests: read
-    uses: ./.github/workflows/check-release.yml
+    uses: ./.github/workflows/release-check.yml
 
   # Environment protection job
   release-approval:
-    needs: [check-release]
-    if: github.event.action != 'labeled' && needs.check-release.outputs.skip != 'true'
+    needs: [release-check]
+    if: github.event.action != 'labeled' && needs.release-check.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment: release
     concurrency:
       group: "release-approval"
-      cancel-in-progress: false
+      cancel-in-progress: true
     steps:
       - name: Approve release
         run: echo "Release approved in the release environment"
 
-  # Use the reusable SLSA trusted tag workflow for releases if approved
+  # Use the reusable trusted tag workflow for releases if approved
   release:
-    needs: [check-release, release-approval]
-    if: github.event.action != 'labeled' && needs.check-release.outputs.skip != 'true'
+    needs: [release-check, release-approval]
+    if: github.event.action != 'labeled' && needs.release-check.outputs.skip != 'true'
     concurrency:
       group: "release"
       cancel-in-progress: false
