@@ -226,16 +226,8 @@ jobs:
 
           # Generate release notes using GitHub API
           echo "Generating release notes using GitHub API..."
-          # Get the current version from bumpr output
+          # Get the current version from bumpr output (will be empty string if not set)
           CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
-          
-          # Set previous_tag_name parameter (empty string if no current version)
-          if [[ -n "$CURRENT_VERSION" ]]; then
-            echo "Using previous tag: $CURRENT_VERSION for release notes"
-          else
-            echo "No previous version found, using empty string for previous_tag_name"
-            CURRENT_VERSION=""
-          fi
           
           # Call the API with the parameters
           RELEASE_NOTES=$(gh api \

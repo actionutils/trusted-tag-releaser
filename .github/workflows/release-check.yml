@@ -93,15 +93,7 @@ jobs:
               # Call GitHub API to generate release notes
               REPO="${{ github.repository }}"
               
-              # Set previous_tag_name parameter (empty string if no current version)
-              if [[ -n "$CURRENT_VERSION" ]]; then
-                echo "Using previous tag: $CURRENT_VERSION for release notes"
-              else
-                echo "No previous version found, using empty string for previous_tag_name"
-                CURRENT_VERSION=""
-              fi
-              
-              # Call the API with the parameters
+              # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
               RELEASE_NOTES=$(gh api \
                 --method POST \
                 -H "Accept: application/vnd.github+json" \
