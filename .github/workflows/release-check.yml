@@ -46,6 +46,8 @@ jobs:
 
       # Add release information to job summary
       - name: Add release information to job summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "# Release Check Summary" >> $GITHUB_STEP_SUMMARY
 
@@ -80,6 +82,24 @@ jobs:
 
               # Add GitHub compare link
               echo "📊 **Changes:** [View changes since $CURRENT_VERSION]($COMPARE_URL)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              # Generate and add release notes using GitHub API
+              echo "### 📝 Release Notes Preview" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              # Call GitHub API to generate release notes
+              REPO="${{ github.repository }}"
+              RELEASE_NOTES=$(gh api \
+                --method POST \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${REPO}/releases/generate-notes" \
+                -f target_commitish="${{ github.sha }}" \
+                -f tag_name="$NEXT_VERSION" \
+                --jq '.body')
+
+              # Add the generated release notes to the summary
+              echo "$RELEASE_NOTES" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
           fi
