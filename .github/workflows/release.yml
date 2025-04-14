@@ -55,6 +55,6 @@ jobs:
       pull-requests: write # Required for bumpr commenting
       actions: read      # Required for SLSA generator
       attestations: write # Required for build provenance attestation
-    uses: ./.github/workflows/slsa-trusted-release.yml
+    uses: ./.github/workflows/trusted-release-workflow.yml
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
