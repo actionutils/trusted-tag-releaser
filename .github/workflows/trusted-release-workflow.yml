@@ -351,7 +351,7 @@ jobs:
           IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
           echo "Verifying build provenance attestation for release-identity.intoto.jsonl"
 
-          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY
+          gh attestation verify "$IDENTITY_FILE" --repo $GITHUB_REPOSITORY --signer-repo=actionutils/trusted-tag-releaser
 
           echo "✅ Build provenance attestation verification successful!"
 
