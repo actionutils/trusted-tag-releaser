@@ -176,7 +176,7 @@ jobs:
     permissions:
       contents: write # Required for release creation
     outputs:
-      release_url: ${{ steps.update_release.outputs.release_url }}
+      release_url: ${{ steps.create_release.outputs.release_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -190,17 +190,14 @@ jobs:
         with:
           name: release-identity-intoto
 
-      # Update release
-      - name: Update GitHub Release
-        id: update_release
+      # Create GitHub Release
+      - name: Create GitHub Release
+        id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
           REPO="${GITHUB_REPOSITORY}"
-
-          # Upload artifacts to the release
-          gh release upload "$TAG_NAME" release-identity.intoto.jsonl --clobber
 
           # Generate release notes using GitHub API
           echo "Generating release notes using GitHub API..."
@@ -216,11 +213,12 @@ jobs:
             -f previous_tag_name="$CURRENT_VERSION" \
             --jq '.body')
 
-          # Update release with generated notes
-          RELEASE_URL=$(gh release edit "$TAG_NAME" \
+          # Create release with generated notes
+          RELEASE_URL=$(gh release create "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --draft=${{ inputs.draft }} \
-            --notes "$RELEASE_NOTES")
+            --notes "$RELEASE_NOTES" \
+            release-identity.intoto.jsonl)
 
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
