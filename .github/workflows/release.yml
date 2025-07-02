@@ -48,10 +48,9 @@ jobs:
       group: "release"
       cancel-in-progress: false
     permissions:
-      id-token: write    # Required for SLSA provenance
+      id-token: write    # Required for attestations
       contents: write    # Required for release and tag creation
       pull-requests: write # Required for bumpr commenting
-      actions: read      # Required for SLSA generator
       attestations: write # Required for build provenance attestation
     uses: ./.github/workflows/trusted-release-workflow.yml
     secrets:
