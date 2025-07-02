@@ -47,6 +47,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag.outputs.value }}
       version: ${{ steps.extract-version.outputs.version }}
+      current_version: ${{ steps.bumpr.outputs.current_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,7 +89,7 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Extracted version: ${VERSION}"
 
-  # Prepare information for SLSA provenance
+  # Prepare information for release attestation
   prepare-slsa:
     needs: [version]
     if: needs.version.outputs.tag_name != ''
@@ -100,9 +101,8 @@ jobs:
     outputs:
       commit_sha: ${{ steps.save-info.outputs.commit_sha }}
       tag_name: ${{ steps.save-info.outputs.tag_name }}
-      base64-subjects: ${{ steps.generate-subjects.outputs.base64-subjects }}
     steps:
-      # Save commit info for SLSA provenance
+      # Save commit info for attestation
       - name: Save commit info
         id: save-info
         run: |
@@ -114,8 +114,8 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
-      # Generate release-identity.intoto.jsonl file for SLSA verification
-      # Note: We intentionally do not include source code archives (zip/tar.gz) in the SLSA provenance
+      # Generate release-identity.intoto.jsonl file for release verification
+      # Note: We intentionally do not include source code archives (zip/tar.gz) in the release attestation
       # because GitHub does not guarantee their stability over time:
       # - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives#stability-of-source-code-archives
       # - https://github.blog/open-source/git/update-on-the-future-stability-of-source-code-archives-and-hashes/
@@ -152,13 +152,6 @@ jobs:
 
           echo "Generated release-identity.intoto.jsonl"
 
-      # Generate base64-subjects directly
-      - name: Generate subjects
-        id: generate-subjects
-        run: |
-          # sha256sum generates output in format "<hash> <filename>" which is exactly what we need
-          # base64 -w0 encodes to base64 and outputs on a single line
-          echo "base64-subjects=$(sha256sum release-identity.intoto.jsonl | base64 -w0)" >> $GITHUB_OUTPUT
 
 
       # Upload release-identity.intoto.jsonl as an artifact to share between jobs
@@ -174,25 +167,10 @@ jobs:
         with:
           subject-path: release-identity.intoto.jsonl
 
-  # Generate SLSA provenance using reusable workflow
-  generate-provenance:
-    needs: [version, prepare-slsa]
-    if: needs.version.outputs.tag_name != ''
-    permissions:
-      id-token: write    # Required for SLSA provenance generation
-      contents: write    # Required for attestations
-      actions: read      # Required to access workflow information
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.prepare-slsa.outputs.base64-subjects }}
-      upload-assets: true
-      upload-tag-name: ${{ needs.version.outputs.tag_name }}
-      draft-release: true
-      provenance-name: provenance.intoto.jsonl
 
   # Create GitHub Release job
   release:
-    needs: [version, generate-provenance, prepare-slsa]
+    needs: [version, prepare-slsa]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -247,16 +225,14 @@ jobs:
           echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "Release URL: $RELEASE_URL"
 
-  # Verify the release using SLSA verifier and gh attestation verify
+  # Verify the release using gh attestation verify
   verify-release:
     needs: [release, prepare-slsa]
-    if: needs.version.outputs.tag_name != ''
+    if: needs.prepare-slsa.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read # Required to read release artifacts
     steps:
-      - name: Install SLSA verifier
-        uses: slsa-framework/slsa-verifier/actions/installer@v2.7.0
 
       - name: Create temporary directory
         id: tempdir
@@ -273,18 +249,17 @@ jobs:
           TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Download the specific attestation file and release-identity.intoto.jsonl
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "provenance.intoto.jsonl" --dir "$TEMP_DIR"
+          # Download release-identity.intoto.jsonl
           gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.intoto.jsonl" --dir "$TEMP_DIR"
 
           echo "Downloaded files to: $TEMP_DIR"
           ls -la "$TEMP_DIR"
 
-      # Verify provenance and commit SHA
-      # Since we don't include source code archives in the SLSA provenance due to their instability,
+      # Verify commit SHA
+      # Since we don't include source code archives in the release attestation due to their instability,
       # we instead verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to.
       # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
-      - name: Verify SLSA provenance and commit SHA
+      - name: Verify commit SHA
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
@@ -292,30 +267,13 @@ jobs:
           REPO_NAME="${GITHUB_REPOSITORY}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Use the specific attestation file and identity file
-          ATTESTATION_FILE="$TEMP_DIR/provenance.intoto.jsonl"
+          # Use the identity file
           IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
 
-          if [ -z "$ATTESTATION_FILE" ]; then
-            echo "Error: No attestation file found"
-            exit 1
-          fi
-
-          if [ -z "$IDENTITY_FILE" ]; then
+          if [ ! -f "$IDENTITY_FILE" ]; then
             echo "Error: No release-identity.intoto.jsonl file found"
             exit 1
           fi
-
-          echo "Verifying provenance for $ATTESTATION_FILE with identity file"
-
-          # Verify the provenance
-          slsa-verifier verify-artifact \
-            --provenance-path "$ATTESTATION_FILE" \
-            --source-uri "github.com/$REPO_NAME" \
-            --source-branch "${{ inputs.branch }}" \
-            "$IDENTITY_FILE"
-
-          echo "✅ Provenance verification successful!"
 
           # Verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to
           echo "Verifying commit SHA in release-identity.intoto.jsonl..."
@@ -342,20 +300,6 @@ jobs:
 
           echo "✅ Commit SHA verification successful!"
 
-      - name: Print provenance
-        run: |
-          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          ATTESTATION_FILE="$TEMP_DIR/provenance.intoto.jsonl"
-          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
-          REPO_NAME="${GITHUB_REPOSITORY}"
-
-          echo "Printing provenance information:"
-          slsa-verifier verify-artifact \
-            --provenance-path "$ATTESTATION_FILE" \
-            --source-uri "github.com/$REPO_NAME" \
-            --source-branch "${{ inputs.branch }}" \
-            --print-provenance \
-            "$IDENTITY_FILE" 2>/dev/null | jq .
 
       - name: Verify build provenance attestation
         env:
