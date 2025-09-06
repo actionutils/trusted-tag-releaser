@@ -15,6 +15,9 @@ on:
         description: 'GitHub token with pull-requests:write permission'
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   # Post version bump information comment on PR when labeled
   preview-comment:
@@ -22,10 +25,15 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: ${{ inputs.ref }}
       - name: Post release preview comment
-        uses: haya14busa/action-bumpr@v1.11.4
+        uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
