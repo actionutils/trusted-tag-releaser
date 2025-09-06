@@ -24,6 +24,9 @@ on:
         description: 'Tag message'
         value: ${{ jobs.check-version.outputs.message }}
 
+permissions:
+  contents: read
+
 jobs:
   # Check if a version bump is needed
   check-version:
@@ -36,13 +39,18 @@ jobs:
       current_version: ${{ steps.bumpr-dry-run.outputs.current_version }}
       message: ${{ steps.bumpr-dry-run.outputs.message }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: ${{ inputs.branch }}
 
       # Dry run to check if a version bump is needed
       - id: bumpr-dry-run
-        uses: haya14busa/action-bumpr@v1.11.4
+        uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
         with:
           dry_run: true
 

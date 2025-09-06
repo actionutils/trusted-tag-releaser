@@ -9,6 +9,9 @@ on:
     types:
       - labeled  # Run when PRs are labeled
 
+permissions:
+  contents: read
+
 jobs:
   # Post version bump information comment on PR when labeled
   release-preview-comment:
@@ -37,6 +40,11 @@ jobs:
       group: "release-approval"
       cancel-in-progress: true
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Approve release
         run: echo "Release approved in the release environment"
 
