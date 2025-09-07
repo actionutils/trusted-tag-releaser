@@ -63,7 +63,6 @@ jobs:
 
       # Set up signed tag configuration
       - uses: chainguard-dev/actions/setup-gitsign@f632aec66edeebe245ad686a33a0c0a2160cac31
-      - run: git config --global tag.gpgSign true
 
       # Bump version based on PR labels (bump:major,bump:minor,bump:patch)
       - id: bumpr
