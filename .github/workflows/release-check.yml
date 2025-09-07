@@ -59,15 +59,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          echo "# Release Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
-            echo "## ⚠️ No Release Needed" >> $GITHUB_STEP_SUMMARY
-            echo "No version bump label was found on the PR. Release will be skipped." >> $GITHUB_STEP_SUMMARY
+            {
+              echo "## ⚠️ No Release Needed"
+              echo "No version bump label was found on the PR. Release will be skipped."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "## ✅ Release Needed" >> $GITHUB_STEP_SUMMARY
-            echo "A version bump label was found. The following release will be created:" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            {
+              echo "## ✅ Release Needed"
+              echo "A version bump label was found. The following release will be created:"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
 
             # Use action-bumpr outputs with better formatting
             if [[ "${{ steps.bumpr-dry-run.outputs.next_version }}" != "" ]]; then
@@ -77,30 +81,38 @@ jobs:
               COMPARE_URL="$REPO_URL/compare/$CURRENT_VERSION...${{ github.sha }}"
 
               # Create a more visually appealing format with emojis
-              echo "### Release Details" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "🏷️ **New Version:** \`$NEXT_VERSION\`" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "📦 **Current Version:** \`$CURRENT_VERSION\`" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "### Release Details"
+                echo ""
+                echo "🏷️ **New Version:** \`$NEXT_VERSION\`"
+                echo ""
+                echo "📦 **Current Version:** \`$CURRENT_VERSION\`"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
 
               # Add tag message if available
               if [[ "${{ steps.bumpr-dry-run.outputs.message }}" != "" ]]; then
-                echo "📝 **Tag Message:** ${{ steps.bumpr-dry-run.outputs.message }}" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
+                {
+                  echo "📝 **Tag Message:** ${{ steps.bumpr-dry-run.outputs.message }}"
+                  echo ""
+                } >> "$GITHUB_STEP_SUMMARY"
               fi
 
               # Add GitHub compare link
-              echo "📊 **Changes:** [View changes since $CURRENT_VERSION]($COMPARE_URL)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "📊 **Changes:** [View changes since $CURRENT_VERSION]($COMPARE_URL)"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
 
               # Generate and add release notes using GitHub API
-              echo "### 📝 Release Notes Preview" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "### 📝 Release Notes Preview"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
 
               # Call GitHub API to generate release notes
               REPO="${{ github.repository }}"
-              
+
               # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
               RELEASE_NOTES=$(gh api \
                 --method POST \
@@ -112,7 +124,9 @@ jobs:
                 --jq '.body')
 
               # Add the generated release notes to the summary
-              echo "$RELEASE_NOTES" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "$RELEASE_NOTES"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
