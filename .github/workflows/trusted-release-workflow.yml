@@ -334,6 +334,16 @@ jobs:
 
           echo "✅ Build provenance attestation verification successful!"
 
+      - name: Verify Tag
+        id: verify-tag
+        uses: actionutils/trusted-tag-verifier@v0
+        with:
+          repository: '${{ github.repository }}'
+          tag: '${{ needs.prepare-slsa.outputs.tag_name }}'
+          fail-on-verification-error: 'true'
+          certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+          certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+
       - name: Cleanup
         if: always()
         run: |
