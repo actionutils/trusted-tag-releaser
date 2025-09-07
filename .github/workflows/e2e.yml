@@ -1,0 +1,328 @@
+name: E2E Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test (optional)'
+        required: false
+        type: string
+      sha:
+        description: 'Commit SHA to test (optional, defaults to current branch)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  statuses: write  # Required for creating commit status checks
+
+jobs:
+  test:
+    # Skip for fork PRs and Dependabot PRs when triggered by pull_request event
+    # - Fork PRs: no access to secrets
+    # - Dependabot PRs: not necessary to test dependency updates
+    # For these PRs, use workflow_dispatch with the commit SHA to test manually if needed
+    # GitHub allows referencing commits from forks using @SHA in workflow references
+    if: |
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request' && github.event.repository.fork != true && github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
+      - name: Set environment variables based on event type
+        id: vars
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual triggers
+            if [ -n "${{ github.event.inputs.pr_number }}" ]; then
+              PR_NUMBER="${{ github.event.inputs.pr_number }}"
+
+              # If SHA not provided, fetch from PR
+              if [ -z "${{ github.event.inputs.sha }}" ]; then
+                echo "Fetching PR #${PR_NUMBER} information..."
+                PR_INFO=$(gh pr view "${PR_NUMBER}" --repo "${{ github.repository }}" --json headRefOid,headRefName,url)
+                SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
+                HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName')
+                PR_URL=$(echo "$PR_INFO" | jq -r '.url')
+                echo "Fetched SHA: $SHA"
+              else
+                SHA="${{ github.event.inputs.sha }}"
+                HEAD_REF="${{ github.ref_name }}"
+                PR_URL="https://github.com/${{ github.repository }}/pull/${PR_NUMBER}"
+              fi
+            else
+              # No PR number provided
+              PR_NUMBER="manual"
+              SHA="${{ github.event.inputs.sha || github.sha }}"
+              HEAD_REF="${{ github.ref_name }}"
+              PR_URL="Manual trigger from branch: ${{ github.ref_name }}"
+            fi
+          else
+            # For pull_request events
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            SHA="${{ github.event.pull_request.head.sha }}"
+            HEAD_REF="$PR_HEAD_REF"
+            PR_URL="${{ github.event.pull_request.html_url }}"
+          fi
+
+          # Set outputs for use in other steps
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "sha=$SHA"
+            echo "head_ref=$HEAD_REF"
+            echo "pr_url=$PR_URL"
+            echo "sha_short=$(echo "$SHA" | cut -c1-8)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create initial status check
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          # Create pending status
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/statuses/"$SHA" \
+            --field state="pending" \
+            --field description="E2E test is running..." \
+            --field context="E2E Test / test" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Checkout test repository
+        uses: actions/checkout@v5
+        with:
+          repository: actionutils/test-trusted-tag-releaser
+          token: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create test base branch
+        env:
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+          SHA: ${{ steps.vars.outputs.sha }}
+          SHA_SHORT: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          # Create test base branch name
+          TEST_BASE_BRANCH="release-test-base-pr-${PR_NUMBER}-${SHA_SHORT}"
+          echo "TEST_BASE_BRANCH=$TEST_BASE_BRANCH" >> "$GITHUB_ENV"
+
+          # Create and checkout new branch
+          git checkout -b "$TEST_BASE_BRANCH"
+
+          # Update workflow to use the PR commit
+          sed -i "s|actionutils/trusted-tag-releaser/\.github/workflows/\([^@]*\)@main|actionutils/trusted-tag-releaser/.github/workflows/\1@${SHA}|g" .github/workflows/release.yml
+
+          # Commit and push changes
+          git add .github/workflows/release.yml
+          git commit -m "chore: update workflow refs to use PR commit ${SHA}"
+          git push origin "$TEST_BASE_BRANCH"
+
+      - name: Create feature branch
+        env:
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+          HEAD_REF: ${{ steps.vars.outputs.head_ref }}
+        run: |
+          # Create feature branch name with timestamp
+          FEATURE_BRANCH="test-feature-pr-${PR_NUMBER}-$(date +%s)"
+          echo "FEATURE_BRANCH=$FEATURE_BRANCH" >> "$GITHUB_ENV"
+
+          # Create and checkout feature branch
+          git checkout -b "$FEATURE_BRANCH"
+
+          # Make test changes
+          echo "# Test change for PR #${PR_NUMBER}" >> README.md
+          echo "Test commit from trusted-tag-releaser PR #${PR_NUMBER}" >> test-file.txt
+
+          # Commit and push
+          git add .
+          git commit -m "test: trigger release for trusted-tag-releaser PR #${PR_NUMBER}
+
+          This is a test commit to validate the trusted-tag-releaser workflow
+          using ref: ${HEAD_REF}"
+
+          git push origin "$FEATURE_BRANCH"
+
+      - name: Create PR with bump:patch label
+        env:
+          GH_TOKEN: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+          SHA: ${{ steps.vars.outputs.sha }}
+          SHA_SHORT: ${{ steps.vars.outputs.sha_short }}
+          HEAD_REF: ${{ steps.vars.outputs.head_ref }}
+          PR_URL: ${{ steps.vars.outputs.pr_url }}
+        run: |
+          # Create pull request
+          gh pr create \
+            --repo actionutils/test-trusted-tag-releaser \
+            --title "Test release for trusted-tag-releaser PR #${PR_NUMBER} (${SHA_SHORT})" \
+            --body "Automated test PR created from trusted-tag-releaser PR #${PR_NUMBER}
+
+          **Source:** ${PR_URL}
+          **Source Ref:** https://github.com/actionutils/trusted-tag-releaser/tree/${HEAD_REF}
+          **Source SHA:** https://github.com/actionutils/trusted-tag-releaser/commit/${SHA}
+
+          This PR tests the trusted-tag-releaser workflow." \
+            --head "$FEATURE_BRANCH" \
+            --base "$TEST_BASE_BRANCH" \
+            --label "bump:patch"
+
+          # Store PR number for later use
+          TEST_PR_NUMBER=$(gh pr list --repo actionutils/test-trusted-tag-releaser --head "$FEATURE_BRANCH" --json number --jq '.[0].number')
+          echo "TEST_PR_NUMBER=$TEST_PR_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Merge PR
+        env:
+          GH_TOKEN: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+        run: |
+          # Wait a moment for the PR to be fully created
+          sleep 5
+
+          # Merge the PR directly
+          gh pr merge "$TEST_PR_NUMBER" \
+            --repo actionutils/test-trusted-tag-releaser \
+            --squash \
+            --delete-branch
+
+          echo "PR #$TEST_PR_NUMBER merged successfully"
+
+      - name: Update status check - PR merged
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/statuses/"$SHA" \
+            --field state="pending" \
+            --field description="Test PR merged, waiting for release workflow..." \
+            --field context="E2E Test / test" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Wait for release workflow completion
+        env:
+          GH_TOKEN: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for release workflow to start..."
+          sleep 30
+
+          # Get the latest workflow run for the Release workflow on the test base branch
+          LATEST_RUN_ID=$(gh run list \
+            --repo actionutils/test-trusted-tag-releaser \
+            --workflow=release.yml \
+            --branch="$TEST_BASE_BRANCH" \
+            --limit=1 \
+            --json=databaseId \
+            --jq='.[0].databaseId')
+
+          if [ -n "$LATEST_RUN_ID" ] && [ "$LATEST_RUN_ID" != "null" ]; then
+            echo "Found release workflow run: $LATEST_RUN_ID"
+            echo "Watching workflow progress..."
+
+            # Watch the workflow run until completion
+            gh run watch "$LATEST_RUN_ID" --repo actionutils/test-trusted-tag-releaser
+
+            echo "✅ Release workflow completed!"
+          else
+            echo "⚠️ No release workflow run found for branch $TEST_BASE_BRANCH"
+          fi
+
+      - name: Revert base branch changes
+        env:
+          GH_TOKEN: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+        run: |
+          # Switch back to the test base branch
+          git checkout "$TEST_BASE_BRANCH"
+
+          # Pull the latest changes including the merge result
+          git pull origin "$TEST_BASE_BRANCH"
+
+          # Check what commits differ from main
+          COMMITS_TO_REVERT=$(git rev-list --reverse main.."$TEST_BASE_BRANCH")
+          echo "Commits to revert: $COMMITS_TO_REVERT"
+
+          # Revert all commits that differ from main (in reverse order)
+          if [ -n "$COMMITS_TO_REVERT" ]; then
+            for commit in $COMMITS_TO_REVERT; do
+              git revert "$commit" --no-edit
+            done
+          else
+            echo "No commits to revert - base branch is same as main"
+          fi
+
+          echo "Reverted all base branch changes to restore original state"
+
+      - name: Merge base branch to main
+        env:
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+          PR_URL: ${{ steps.vars.outputs.pr_url }}
+        run: |
+          # Switch to main branch
+          git checkout main
+          git pull origin main
+
+          # Merge the base branch
+          git merge "$TEST_BASE_BRANCH" --no-ff -m "Merge test results back to main (PR #${PR_NUMBER})
+
+          Original test PR: https://github.com/actionutils/test-trusted-tag-releaser/pull/$TEST_PR_NUMBER
+          Source: ${PR_URL}
+
+          This ensures tags created during testing are accessible from main branch via git tag --merged."
+
+          # Push the merged main
+          git push origin main
+
+          # Clean up the test base branch
+          git push origin --delete "$TEST_BASE_BRANCH"
+
+          echo "Merged test base branch to main directly"
+
+      - name: Update status check - Success
+        if: github.event_name == 'workflow_dispatch' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/statuses/"$SHA" \
+            --field state="success" \
+            --field description="E2E test completed successfully" \
+            --field context="E2E Test / test" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Update status check - Failure
+        if: github.event_name == 'workflow_dispatch' && failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/statuses/"$SHA" \
+            --field state="failure" \
+            --field description="E2E test failed" \
+            --field context="E2E Test / test" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Output test PR info
+        env:
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+        run: |
+          echo "✅ E2E test completed successfully!"
+          echo "Test PR URL: https://github.com/actionutils/test-trusted-tag-releaser/pull/$TEST_PR_NUMBER"
+          echo "Base branch merged directly to main - no PR created"
+          echo "Check the test repository for workflow execution and release creation."
+          echo "Tags should now be trackable from main branch via 'git tag --merged'."
