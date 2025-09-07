@@ -15,8 +15,7 @@ on:
         description: 'GitHub token with pull-requests:write permission'
         required: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   # Post version bump information comment on PR when labeled
