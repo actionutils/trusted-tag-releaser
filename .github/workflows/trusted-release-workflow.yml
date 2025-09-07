@@ -129,10 +129,12 @@ jobs:
           MAJOR_TAG="${{ needs.version.outputs.major_tag }}"
           MINOR_TAG="${{ needs.version.outputs.minor_tag }}"
 
-          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
-          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "major_tag=$MAJOR_TAG" >> "$GITHUB_OUTPUT"
-          echo "minor_tag=$MINOR_TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "commit_sha=$COMMIT_SHA"
+            echo "tag_name=$TAG_NAME"
+            echo "major_tag=$MAJOR_TAG"
+            echo "minor_tag=$MINOR_TAG"
+          } >> "$GITHUB_OUTPUT"
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
       # Generate release-identity.intoto.jsonl file for release verification
