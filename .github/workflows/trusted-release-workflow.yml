@@ -51,6 +51,8 @@ jobs:
       tag_name: ${{ steps.tag.outputs.value }}
       version: ${{ steps.extract-version.outputs.version }}
       current_version: ${{ steps.bumpr.outputs.current_version }}
+      major_tag: ${{ steps.update-semver.outputs.major }}
+      minor_tag: ${{ steps.update-semver.outputs.minor }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
@@ -69,7 +71,8 @@ jobs:
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
 
       # Update corresponding major and minor tags
-      - uses: haya14busa/action-update-semver@22a3666f9309f0d72ab0ea6c49b7a8019c1eab38 # v1.3.0
+      - uses: haya14busa/action-update-semver@b209bb10d135e5c43c78327f9e32498de006b40e # v1.5.0
+        id: update-semver
         if: steps.bumpr.outputs.skip != 'true'
         with:
           tag: ${{ steps.bumpr.outputs.next_version }}
@@ -108,6 +111,8 @@ jobs:
     outputs:
       commit_sha: ${{ steps.save-info.outputs.commit_sha }}
       tag_name: ${{ steps.save-info.outputs.tag_name }}
+      major_tag: ${{ steps.save-info.outputs.major_tag }}
+      minor_tag: ${{ steps.save-info.outputs.minor_tag }}
     steps:
       # Save commit info for attestation
       - name: Harden the runner (Audit all outbound calls)
@@ -121,9 +126,13 @@ jobs:
           COMMIT_SHA="${{ github.sha }}"
           TAG="${{ needs.version.outputs.tag_name }}"
           TAG_NAME="${TAG#refs/tags/}"
+          MAJOR_TAG="${{ needs.version.outputs.major_tag }}"
+          MINOR_TAG="${{ needs.version.outputs.minor_tag }}"
 
           echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "major_tag=$MAJOR_TAG" >> "$GITHUB_OUTPUT"
+          echo "minor_tag=$MINOR_TAG" >> "$GITHUB_OUTPUT"
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
 
       # Generate release-identity.intoto.jsonl file for release verification
@@ -340,6 +349,28 @@ jobs:
         with:
           repository: '${{ github.repository }}'
           tag: '${{ needs.prepare-slsa.outputs.tag_name }}'
+          fail-on-verification-error: 'true'
+          certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+          certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+
+      - name: Verify Major Tag
+        id: verify-major-tag
+        if: needs.prepare-slsa.outputs.major_tag != ''
+        uses: actionutils/trusted-tag-verifier@v0
+        with:
+          repository: '${{ github.repository }}'
+          tag: '${{ needs.prepare-slsa.outputs.major_tag }}'
+          fail-on-verification-error: 'true'
+          certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+          certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+
+      - name: Verify Minor Tag
+        id: verify-minor-tag
+        if: needs.prepare-slsa.outputs.minor_tag != ''
+        uses: actionutils/trusted-tag-verifier@v0
+        with:
+          repository: '${{ github.repository }}'
+          tag: '${{ needs.prepare-slsa.outputs.minor_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
