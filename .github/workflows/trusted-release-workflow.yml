@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      environment:
+        description: 'Environment for protecting the release flow'
+        required: false
+        type: string
+        default: ''
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -40,8 +45,24 @@ permissions:
   contents: read
 
 jobs:
+  release-approval:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: "release-approval"
+      cancel-in-progress: true
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Approve release
+        run: echo "Release approved in the release environment"
+
   # Version management and tag creation job
   version:
+    needs: [release-approval]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Enable OIDC
