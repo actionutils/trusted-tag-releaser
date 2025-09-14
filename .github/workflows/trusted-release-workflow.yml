@@ -25,7 +25,6 @@ on:
         description: 'Environment for protecting the release flow'
         required: false
         type: string
-        
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -41,8 +40,7 @@ on:
         description: 'URL of the created GitHub release'
         value: ${{ jobs.release.outputs.release_url }}
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   # Check if a release is needed (dry-run)
