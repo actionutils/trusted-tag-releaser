@@ -25,10 +25,7 @@ on:
         description: 'Environment for protecting the release flow'
         required: false
         type: string
-        # Default to "release" so callers don't have to pass it.
-        # This also avoids "Missing successful active release deployment" errors
-        # by ensuring a deployment target exists by default.
-        default: 'release'
+        
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
