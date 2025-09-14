@@ -25,7 +25,10 @@ on:
         description: 'Environment for protecting the release flow'
         required: false
         type: string
-        default: ''
+        # Default to "release" so callers don't have to pass it.
+        # This also avoids "Missing successful active release deployment" errors
+        # by ensuring a deployment target exists by default.
+        default: 'release'
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -148,11 +151,33 @@ jobs:
             fi
           fi
 
-  # Version management and tag creation job
-  version:
+  # Environment protection job
+  # This job intentionally deploys to the environment to satisfy environment
+  # protection rules and avoid "Missing successful active release deployment".
+  # It also serves as the single approval gate for the release flow.
+  release-approval:
     needs: [release-check]
     if: needs.release-check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    concurrency:
+      group: "release-approval"
+      cancel-in-progress: true
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Approve release
+        run: |
+          echo "Release approved in the '${{ inputs.environment }}' environment"
+          echo "This job exists to satisfy environment deployment requirements."
+
+  # Version management and tag creation job
+  version:
+    needs: [release-approval, release-check]
+    if: needs.release-check.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Enable OIDC
