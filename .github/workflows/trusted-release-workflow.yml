@@ -21,6 +21,10 @@ on:
         required: false
         type: boolean
         default: false
+      environment:
+        description: 'Environment for protecting the release flow'
+        required: false
+        type: string
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -36,12 +40,139 @@ on:
         description: 'URL of the created GitHub release'
         value: ${{ jobs.release.outputs.release_url }}
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
+  # Check if a release is needed (dry-run)
+  release-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for GitHub's generate-release-note API (notes are only displayed in job summary, not written to any file)
+    outputs:
+      skip: ${{ steps.bumpr-dry-run.outputs.skip }}
+      next_version: ${{ steps.bumpr-dry-run.outputs.next_version }}
+      current_version: ${{ steps.bumpr-dry-run.outputs.current_version }}
+      message: ${{ steps.bumpr-dry-run.outputs.message }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Dry run to check if a version bump is needed
+      - id: bumpr-dry-run
+        uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
+        with:
+          dry_run: true
+
+      # Add release information to job summary
+      - name: Add release information to job summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
+            {
+              echo "## ⚠️ No Release Needed"
+              echo "No version bump label was found on the PR. Release will be skipped."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## ✅ Release Needed"
+              echo "A version bump label was found. The following release will be created:"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            # Use action-bumpr outputs with better formatting
+            if [[ "${{ steps.bumpr-dry-run.outputs.next_version }}" != "" ]]; then
+              CURRENT_VERSION="${{ steps.bumpr-dry-run.outputs.current_version }}"
+              NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
+              REPO_URL="https://github.com/${{ github.repository }}"
+              COMPARE_URL="$REPO_URL/compare/$CURRENT_VERSION...${{ github.sha }}"
+
+              # Create a more visually appealing format with emojis
+              {
+                echo "### Release Details"
+                echo ""
+                echo "🏷️ **New Version:** \`$NEXT_VERSION\`"
+                echo ""
+                echo "📦 **Current Version:** \`$CURRENT_VERSION\`"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+
+              # Add tag message if available
+              if [[ "${{ steps.bumpr-dry-run.outputs.message }}" != "" ]]; then
+                {
+                  echo "📝 **Tag Message:** ${{ steps.bumpr-dry-run.outputs.message }}"
+                  echo ""
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+
+              # Add GitHub compare link
+              {
+                echo "📊 **Changes:** [View changes since $CURRENT_VERSION]($COMPARE_URL)"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+
+              # Generate and add release notes using GitHub API
+              {
+                echo "### 📝 Release Notes Preview"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+
+              # Call GitHub API to generate release notes
+              REPO="${{ github.repository }}"
+
+              # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
+              RELEASE_NOTES=$(gh api \
+                --method POST \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${REPO}/releases/generate-notes" \
+                -f target_commitish="${{ github.sha }}" \
+                -f tag_name="$NEXT_VERSION" \
+                -f previous_tag_name="$CURRENT_VERSION" \
+                --jq '.body')
+
+              # Add the generated release notes to the summary
+              {
+                echo "$RELEASE_NOTES"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+  # Environment protection job
+  # This job intentionally deploys to the environment to satisfy environment
+  # protection rules and avoid "Missing successful active release deployment".
+  # It also serves as the single approval gate for the release flow.
+  release-approval:
+    needs: [release-check]
+    if: needs.release-check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: "release-approval"
+      cancel-in-progress: true
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Approve release
+        run: |
+          echo "Release approved in the '${{ inputs.environment }}' environment"
+          echo "This job exists to satisfy environment deployment requirements."
+
   # Version management and tag creation job
   version:
+    needs: [release-approval, release-check]
+    if: needs.release-check.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Enable OIDC
