@@ -34,7 +34,5 @@ jobs:
       pull-requests: write # Required for bumpr commenting
       attestations: write # Required for build provenance attestation
     uses: ./.github/workflows/trusted-release-workflow.yml
-    with:
-      environment: release
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
