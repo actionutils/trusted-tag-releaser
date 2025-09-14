@@ -205,7 +205,7 @@ jobs:
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
 
       # Update corresponding major and minor tags
-      - uses: haya14busa/action-update-semver@v1.5.0
+      - uses: haya14busa/action-update-semver@v1.5.1
         id: update-semver
         if: steps.bumpr.outputs.skip != 'true'
         with:
