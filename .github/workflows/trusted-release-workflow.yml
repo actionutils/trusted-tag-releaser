@@ -247,6 +247,7 @@ jobs:
       tag_name: ${{ steps.save-info.outputs.tag_name }}
       major_tag: ${{ steps.save-info.outputs.major_tag }}
       minor_tag: ${{ steps.save-info.outputs.minor_tag }}
+      base64_subjects: ${{ steps.compute-subjects.outputs.base64_subjects }}
     steps:
       # Save commit info for attestation
       - name: Harden the runner (Audit all outbound calls)
@@ -270,64 +271,49 @@ jobs:
             echo "minor_tag=$MINOR_TAG"
           } >> "$GITHUB_OUTPUT"
           echo "Using commit: $COMMIT_SHA with tag: $TAG_NAME for provenance"
-
-      # Generate release-identity.intoto.jsonl file for release verification
-      # Note: We intentionally do not include source code archives (zip/tar.gz) in the release attestation
-      # because GitHub does not guarantee their stability over time:
-      # - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives#stability-of-source-code-archives
-      # - https://github.blog/open-source/git/update-on-the-future-stability-of-source-code-archives-and-hashes/
-      # Instead, we include the commit SHA in release-identity.intoto.jsonl and verify that it matches the SHA that the tag points to.
-      - name: Generate release identity file
-        id: generate-metadata
+      # Compute tag SHA (git rev-parse <tag>) and prepare SLSA generator subjects
+      - name: Compute tag SHA and subjects
+        id: compute-subjects
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          CREATED_AT=$(date +%s)  # Unix timestamp (seconds since epoch)
+          TAG_NAME='${{ steps.save-info.outputs.tag_name }}'
 
-          # Create release-identity.intoto.jsonl file using in-toto Statement format
-          cat > release-identity.intoto.jsonl << EOF
-          {
-            "_type": "https://in-toto.io/Statement/v0.1",
-            "predicateType": "https://github.com/actionutils/trusted-tag-releaser/tree/main/in-toto/release-identity/v1",
-            "subject": [
-              {
-                "name": "$REPO_NAME",
-                "digest": {
-                  "git": "${{ github.sha }}"
-                }
-              }
-            ],
-            "predicate": {
-              "version": "${{ needs.version.outputs.tag_name }}",
-              "created_at": $CREATED_AT,
-              "git": {
-                "tag": "${{ needs.version.outputs.tag_name }}",
-                "repository": "https://github.com/$GITHUB_REPOSITORY"
-              }
-            }
-          }
-          EOF
+          # Get the object SHA that the tag ref points to (matches `git rev-parse <tag>` semantics)
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --jq '.object.sha')
 
-          echo "Generated release-identity.intoto.jsonl"
+          # Create a deterministic virtual artifact content (not uploaded to release): the tag SHA without newline
+          printf "%s" "$TAG_SHA" > release-tag.sha
+
+          # Encode the exact sha256sum output ("<sha256>  <name>") as base64 for the SLSA generator
+          BASE64_SUBJECTS=$(sha256sum release-tag.sha | base64 -w0)
+
+          echo "base64_subjects=$BASE64_SUBJECTS" >> "$GITHUB_OUTPUT"
+          echo "Computed tag SHA (rev-parse): $TAG_SHA"
 
 
+  # Generate and upload SLSA provenance for the tag SHA artifact BEFORE creating the release content
+  slsa-provenance:
+    needs: [prepare-slsa]
+    if: needs.prepare-slsa.outputs.tag_name != ''
+    permissions:
+      actions: read # To read the workflow path.
+      id-token: write # To sign the provenance.
+      contents: write # To add assets to a release.
+      attestations: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.prepare-slsa.outputs.base64_subjects }}
+      upload-assets: true
+      upload-tag-name: ${{ needs.prepare-slsa.outputs.tag_name }}
+      draft-release: true
 
-      # Upload release-identity.intoto.jsonl as an artifact to share between jobs
-      - name: Upload release identity artifact
-        id: upload-identity
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: release-identity-intoto
-          path: release-identity.intoto.jsonl
-          retention-days: 1
-
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: release-identity.intoto.jsonl
+  
 
 
   # Create GitHub Release job
   release:
-    needs: [version, prepare-slsa]
+    needs: [version, prepare-slsa, slsa-provenance]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -345,15 +331,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.tag_name }}
 
-      # Download the artifacts from previous jobs
-
-      - name: Download release-identity.intoto.jsonl
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: release-identity-intoto
-
-      # Create GitHub Release
-      - name: Create GitHub Release
+      # Create or update GitHub Release (draft may be pre-created by SLSA generator)
+      - name: Update GitHub Release
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
@@ -375,19 +354,18 @@ jobs:
             -f previous_tag_name="$CURRENT_VERSION" \
             --jq '.body')
 
-          # Create release with generated notes
-          RELEASE_URL=$(gh release create "$TAG_NAME" \
+          # Edit existing draft release (created by SLSA generator) with generated notes
+          RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
-            --draft=${{ inputs.draft }} \
             --notes "$RELEASE_NOTES" \
-            release-identity.intoto.jsonl)
+            --draft=${{ inputs.draft }})
 
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
 
   # Verify the release using gh attestation verify
   verify-release:
-    needs: [release, prepare-slsa]
+    needs: [release, slsa-provenance, version]
     if: needs.prepare-slsa.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -407,77 +385,33 @@ jobs:
           echo "dir=$TEMP_DIR" >> "$GITHUB_OUTPUT"
           echo "Created temporary directory: $TEMP_DIR"
 
-      - name: Download files for verification
+      - name: Install slsa-verifier
+        uses: slsa-framework/slsa-verifier/actions/installer@v2.7.1
+
+      - name: Verify SLSA provenance with slsa-verifier
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
-          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-
-          # Download release-identity.intoto.jsonl
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --pattern "release-identity.intoto.jsonl" --dir "$TEMP_DIR"
-
-          echo "Downloaded files to: $TEMP_DIR"
-          ls -la "$TEMP_DIR"
-
-      # Verify commit SHA
-      # Since we don't include source code archives in the release attestation due to their instability,
-      # we instead verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to.
-      # This provides a more reliable verification mechanism that isn't affected by GitHub's archive generation process.
-      - name: Verify commit SHA
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-        run: |
-          TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
+          set -euo pipefail
           REPO_NAME="${GITHUB_REPOSITORY}"
+          TAG_NAME="${{ needs.version.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Use the identity file
-          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
-
-          if [ ! -f "$IDENTITY_FILE" ]; then
-            echo "Error: No release-identity.intoto.jsonl file found"
-            exit 1
-          fi
-
-          # Verify that the commit SHA in release-identity.intoto.jsonl matches the SHA that the tag points to
-          echo "Verifying commit SHA in release-identity.intoto.jsonl..."
-
-          # Get the commit SHA from release-identity.intoto.jsonl
-          IDENTITY_COMMIT_SHA=$(jq -r '.subject[0].digest.git' "$IDENTITY_FILE")
-
-          # Get the commit SHA that the tag points to using GitHub API
-          # First, get the tag SHA
+          # Get git rev-parse <tag> equivalent and avoid trailing newline
           TAG_SHA=$(gh api "repos/$REPO_NAME/git/refs/tags/$TAG_NAME" --jq '.object.sha')
-          echo "Tag SHA: $TAG_SHA"
 
-          # Then, get the commit SHA that the tag points to
-          TAG_COMMIT_SHA=$(gh api "repos/$REPO_NAME/git/tags/$TAG_SHA" --jq '.object.sha')
+          # Download provenance uploaded by SLSA generator
+          PROV_NAME='${{ needs.slsa-provenance.outputs.provenance-name }}'
+          gh release download "$TAG_NAME" --repo "$REPO_NAME" --pattern "$PROV_NAME" --dir "$TEMP_DIR"
 
-          echo "Commit SHA in release-identity.intoto.jsonl: $IDENTITY_COMMIT_SHA"
-          echo "Commit SHA that tag $TAG_NAME points to: $TAG_COMMIT_SHA"
+          echo "Verifying with slsa-verifier against provenance: $PROV_NAME"
+          slsa-verifier verify-artifact \
+            --source-uri "github.com/$REPO_NAME" \
+            --source-tag "$TAG_NAME" \
+            --provenance-path "$TEMP_DIR/$PROV_NAME" \
+            <(printf "%s" "$TAG_SHA")
 
-          # Verify that the commit SHAs match
-          if [ "$IDENTITY_COMMIT_SHA" != "$TAG_COMMIT_SHA" ]; then
-            echo "❌ Commit SHA verification failed! The commit SHA in release-identity.intoto.jsonl does not match the SHA that the tag points to."
-            exit 1
-          fi
-
-          echo "✅ Commit SHA verification successful!"
-
-
-      - name: Verify build provenance attestation
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-          GH_FORCE_TTY: 1
-        run: |
-          TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
-          IDENTITY_FILE="$TEMP_DIR/release-identity.intoto.jsonl"
-          echo "Verifying build provenance attestation for release-identity.intoto.jsonl"
-
-          gh attestation verify "$IDENTITY_FILE" --repo "$GITHUB_REPOSITORY" --signer-repo=actionutils/trusted-tag-releaser
-
-          echo "✅ Build provenance attestation verification successful!"
+          echo "✅ SLSA provenance verification successful"
 
       - name: Verify Tag
         id: verify-tag
