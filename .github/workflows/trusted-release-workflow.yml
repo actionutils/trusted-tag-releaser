@@ -337,7 +337,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          TAG_NAME="${{ needs.prepare-slsa.outputs.tag_name }}"
+          TAG_NAME="${{ needs.version.outputs.tag_name }}"
           REPO="${GITHUB_REPOSITORY}"
 
           # Generate release notes using GitHub API
@@ -366,7 +366,7 @@ jobs:
   # Verify the release using gh attestation verify
   verify-release:
     needs: [release, slsa-provenance, version]
-    if: needs.prepare-slsa.outputs.tag_name != ''
+    if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read # Required to read release artifacts
@@ -417,27 +417,27 @@ jobs:
         id: verify-tag
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.prepare-slsa.outputs.tag_name }}'
+          verify: '${{ github.repository }}@${{ needs.version.outputs.tag_name }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
 
       - name: Verify Major Tag
         id: verify-major-tag
-        if: needs.prepare-slsa.outputs.major_tag != ''
+        if: needs.version.outputs.major_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.prepare-slsa.outputs.major_tag }}'
+          verify: '${{ github.repository }}@${{ needs.version.outputs.major_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
 
       - name: Verify Minor Tag
         id: verify-minor-tag
-        if: needs.prepare-slsa.outputs.minor_tag != ''
+        if: needs.version.outputs.minor_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.prepare-slsa.outputs.minor_tag }}'
+          verify: '${{ github.repository }}@${{ needs.version.outputs.minor_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
