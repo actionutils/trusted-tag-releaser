@@ -279,17 +279,15 @@ jobs:
         run: |
           TAG_NAME='${{ steps.save-info.outputs.tag_name }}'
 
-          # Get the object SHA that the tag ref points to (matches `git rev-parse <tag>` semantics)
-          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --jq '.object.sha')
-
-          # Create a deterministic virtual artifact content (not uploaded to release): the tag SHA without newline
-          printf "%s" "$TAG_SHA" > release-tag.sha
+          # Create a deterministic virtual artifact content directly from GitHub API (includes trailing newline)
+          # Equivalent to: git rev-parse <tag>
+          gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --jq '.object.sha' > release-tag.sha
 
           # Encode the exact sha256sum output ("<sha256>  <name>") as base64 for the SLSA generator
           BASE64_SUBJECTS=$(sha256sum release-tag.sha | base64 -w0)
 
           echo "base64_subjects=$BASE64_SUBJECTS" >> "$GITHUB_OUTPUT"
-          echo "Computed tag SHA (rev-parse): $TAG_SHA"
+          echo "Computed tag SHA (rev-parse): $(cat release-tag.sha)"
 
 
   # Generate and upload SLSA provenance for the tag SHA artifact BEFORE creating the release content
@@ -397,8 +395,8 @@ jobs:
           TAG_NAME="${{ needs.version.outputs.tag_name }}"
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
-          # Get git rev-parse <tag> equivalent and avoid trailing newline
-          TAG_SHA=$(gh api "repos/$REPO_NAME/git/refs/tags/$TAG_NAME" --jq '.object.sha')
+          # Get git rev-parse <tag> equivalent via GitHub API and write to file for verification
+          gh api "repos/$REPO_NAME/git/refs/tags/$TAG_NAME" --jq '.object.sha' > "$TEMP_DIR/release-tag.sha"
 
           # Download provenance uploaded by SLSA generator
           PROV_NAME='${{ needs.slsa-provenance.outputs.provenance-name }}'
@@ -409,7 +407,7 @@ jobs:
             --source-uri "github.com/$REPO_NAME" \
             --source-tag "$TAG_NAME" \
             --provenance-path "$TEMP_DIR/$PROV_NAME" \
-            <(printf "%s" "$TAG_SHA")
+            "$TEMP_DIR/release-tag.sha"
 
           echo "✅ SLSA provenance verification successful"
 
