@@ -281,13 +281,14 @@ jobs:
 
           # Create a deterministic virtual artifact content directly from GitHub API (includes trailing newline)
           # Equivalent to: git rev-parse <tag>
-          gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --jq '.object.sha' > release-tag.sha
+          FILENAME="${TAG_NAME}.sha"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --jq '.object.sha' > "$FILENAME"
 
           # Encode the exact sha256sum output ("<sha256>  <name>") as base64 for the SLSA generator
-          BASE64_SUBJECTS=$(sha256sum release-tag.sha | base64 -w0)
+          BASE64_SUBJECTS=$(sha256sum "$FILENAME" | base64 -w0)
 
           echo "base64_subjects=$BASE64_SUBJECTS" >> "$GITHUB_OUTPUT"
-          echo "Computed tag SHA (rev-parse): $(cat release-tag.sha)"
+          echo "Computed tag SHA (rev-parse): $(cat "$FILENAME")"
 
 
   # Generate and upload SLSA provenance for the tag SHA artifact BEFORE creating the release content
@@ -396,7 +397,8 @@ jobs:
           TEMP_DIR="${{ steps.tempdir.outputs.dir }}"
 
           # Get git rev-parse <tag> equivalent via GitHub API and write to file for verification
-          gh api "repos/$REPO_NAME/git/refs/tags/$TAG_NAME" --jq '.object.sha' > "$TEMP_DIR/release-tag.sha"
+          TAG_SHA_FILE="$TEMP_DIR/${TAG_NAME}.sha"
+          gh api "repos/$REPO_NAME/git/refs/tags/$TAG_NAME" --jq '.object.sha' > "$TAG_SHA_FILE"
 
           # Download provenance uploaded by SLSA generator
           PROV_NAME='${{ needs.slsa-provenance.outputs.provenance-name }}'
@@ -407,7 +409,7 @@ jobs:
             --source-uri "github.com/$REPO_NAME" \
             --source-tag "$TAG_NAME" \
             --provenance-path "$TEMP_DIR/$PROV_NAME" \
-            "$TEMP_DIR/release-tag.sha"
+            "$TAG_SHA_FILE"
 
           echo "✅ SLSA provenance verification successful"
 
