@@ -229,10 +229,11 @@ jobs:
 
           if [ -n "$LATEST_RUN_ID" ] && [ "$LATEST_RUN_ID" != "null" ]; then
             echo "Found release workflow run: $LATEST_RUN_ID"
+            echo "Workflow URL: https://github.com/actionutils/test-trusted-tag-releaser/actions/runs/$LATEST_RUN_ID"
             echo "Watching workflow progress..."
 
             # Watch the workflow run until completion
-            gh run watch "$LATEST_RUN_ID" --repo actionutils/test-trusted-tag-releaser
+            gh run watch "$LATEST_RUN_ID" --compact --exit-status --repo actionutils/test-trusted-tag-releaser
 
             echo "✅ Release workflow completed!"
           else
