@@ -347,7 +347,7 @@ jobs:
               ${{ needs.version.outputs.tag_name }}
             ```
 
-            ### 3) Using slsa-verifier
+            ### 3) Using [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
 
             ```
             TAG="${{ needs.version.outputs.tag_name }}"
