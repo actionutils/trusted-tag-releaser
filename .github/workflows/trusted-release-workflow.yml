@@ -324,15 +324,14 @@ jobs:
             ### 1) Using slsa-verifier
 
             ```
-            REPO="${{ github.repository }}"
             TAG="${{ needs.version.outputs.tag_name }}"
             # Fetch tag object SHA from GitHub API (same as `git rev-parse <tag>`)
-            TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${{ needs.version.outputs.tag_name }}" | jq -r '.object.sha')
+            TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${TAG}" | jq -r '.object.sha')
 
             # Verify SLSA provenance for the tag SHA virtual artifact
             slsa-verifier verify-artifact \
               --source-uri "github.com/${{ github.repository }}" \
-              --provenance-path <(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag_name }}/release-provenance.intoto.jsonl") \
+              --provenance-path <(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
               <(echo "$TAG_SHA")
             ```
 
