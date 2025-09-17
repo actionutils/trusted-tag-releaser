@@ -331,10 +331,67 @@ jobs:
             -f previous_tag_name="$CURRENT_VERSION" \
             --jq '.body')
 
-          # Edit existing draft release (created by SLSA generator) with generated notes
+          # Append verification instructions to the generated release notes
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "$RELEASE_NOTES"
+            echo
+            cat <<EOF
+<details>
+<summary>📋 Release Verification Instructions</summary>
+
+Verify this release and its tag provenance using the following examples.
+
+---
+
+1) Using slsa-verifier (same approach as our verify-release job)
+
+```
+# Set variables
+REPO="${REPO}"
+TAG="${TAG_NAME}"
+
+# Verify SLSA provenance for the tag SHA virtual artifact
+slsa-verifier verify-artifact \
+  --source-uri "github.com/${REPO}" \
+  --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
+  <(gh api "repos/${REPO}/git/refs/tags/${TAG}" --jq '.object.sha')
+```
+
+Expected output includes a success message indicating the provenance matches the source and subject.
+
+---
+
+2) Using actionutils/trusted-tag-verifier (GitHub Actions example)
+
+Add a lightweight workflow step to verify the signed tag for this release:
+
+```
+name: Verify Release Tag
+on: [workflow_dispatch]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify tag signature and identity
+        uses: actionutils/trusted-tag-verifier@v0
+        with:
+          verify: '${REPO}@${TAG_NAME}'
+          fail-on-verification-error: 'true'
+          certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+          certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+```
+
+Adjust the identity regexp to your policy if you fork this workflow.
+
+</details>
+EOF
+          } > "$NOTES_FILE"
+
+          # Edit existing draft release (created by SLSA generator) with generated notes + verification section
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
-            --notes "$RELEASE_NOTES" \
+            --notes-file "$NOTES_FILE" \
             --draft=${{ inputs.draft }})
 
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
@@ -367,7 +424,7 @@ jobs:
           TAG="${{ needs.version.outputs.tag_name }}"
           slsa-verifier verify-artifact \
             --source-uri "github.com/$REPO_NAME" \
-            --provenance-path <(curl -sfSL "https://github.com/$REPO_NAME/releases/download/release-provenance.intoto.jsonl") \
+            --provenance-path <(curl -fsSL "https://github.com/$REPO_NAME/releases/download/${TAG}/release-provenance.intoto.jsonl") \
             <(gh api "repos/$REPO_NAME/git/refs/tags/${TAG}" --jq '.object.sha')
 
           echo "✅ SLSA provenance verification successful"
