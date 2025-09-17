@@ -74,6 +74,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # shellcheck disable=SC2016,SC1003
           echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
@@ -166,6 +167,7 @@ jobs:
 
       - name: Approve release
         run: |
+          # shellcheck disable=SC2016,SC1003
           echo "Release approved in the '${{ inputs.environment }}' environment"
           echo "This job exists to satisfy environment deployment requirements."
 
@@ -313,30 +315,7 @@ jobs:
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
-        run: |
-          TAG_NAME="${{ needs.version.outputs.tag_name }}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          # Generate release notes using GitHub API
-          echo "Generating release notes using GitHub API..."
-          # Get the current version from bumpr output (will be empty string if not set)
-          CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
-
-          # Call the API with the parameters
-          RELEASE_NOTES=$(gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${REPO}/releases/generate-notes" \
-            -f tag_name="$TAG_NAME" \
-            -f previous_tag_name="$CURRENT_VERSION" \
-            --jq '.body')
-
-          # Append verification instructions to the generated release notes
-          NOTES_FILE="$(mktemp)"
-          {
-            echo "$RELEASE_NOTES"
-            echo
-            cat <<'EOF'
+          VERIFICATION_INSTRUCTIONS: |
             <details>
             <summary>📋 Release Verification Instructions</summary>
 
@@ -344,18 +323,21 @@ jobs:
 
             ---
 
-            1) Using slsa-verifier (same approach as our verify-release job)
+            1) Using slsa-verifier
 
             ```
-            # Set variables
-            REPO="${REPO}"
-            TAG="${TAG_NAME}"
+            # These values are pre-filled for this release
+            REPO="${{ github.repository }}"
+            TAG="${{ needs.version.outputs.tag_name }}"
+
+            # Fetch tag object SHA from GitHub API (same as `git rev-parse <tag>`)
+            TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${{ needs.version.outputs.tag_name }}" | jq -r '.object.sha')
 
             # Verify SLSA provenance for the tag SHA virtual artifact
             slsa-verifier verify-artifact \
-              --source-uri "github.com/${REPO}" \
-              --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
-              <(gh api "repos/${REPO}/git/refs/tags/${TAG}" --jq '.object.sha')
+              --source-uri "github.com/${{ github.repository }}" \
+              --provenance-path <(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag_name }}/release-provenance.intoto.jsonl") \
+              <(echo "$TAG_SHA")
             ```
 
             Expected output includes a success message indicating the provenance matches the source and subject.
@@ -376,7 +358,7 @@ jobs:
                   - name: Verify tag signature and identity
                     uses: actionutils/trusted-tag-verifier@v0
                     with:
-                      verify: '${REPO}@${TAG_NAME}'
+                      verify: '${{ github.repository }}@${{ needs.version.outputs.tag_name }}'
                       fail-on-verification-error: 'true'
                       certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
                       certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
@@ -385,8 +367,28 @@ jobs:
             Adjust the identity regexp to your policy if you fork this workflow.
 
             </details>
-          EOF
-          } > "$NOTES_FILE"
+        run: |
+          # shellcheck disable=SC2016
+          TAG_NAME="${{ needs.version.outputs.tag_name }}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          # Generate release notes using GitHub API
+          echo "Generating release notes using GitHub API..."
+          # Get the current version from bumpr output (will be empty string if not set)
+          CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
+
+          # Call the API with the parameters
+          RELEASE_NOTES=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${REPO}/releases/generate-notes" \
+            -f tag_name="$TAG_NAME" \
+            -f previous_tag_name="$CURRENT_VERSION" \
+            --jq '.body')
+
+          # Append verification instructions to the generated release notes
+          NOTES_FILE="$(mktemp)"
+          printf "%s\n\n%s\n" "$RELEASE_NOTES" "$VERIFICATION_INSTRUCTIONS" > "$NOTES_FILE"
 
           # Edit existing draft release (created by SLSA generator) with generated notes + verification section
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
