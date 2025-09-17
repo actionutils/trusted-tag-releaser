@@ -182,6 +182,8 @@ jobs:
       tag_name: ${{ steps.tag.outputs.value }}
       version: ${{ steps.extract-version.outputs.version }}
       current_version: ${{ steps.bumpr.outputs.current_version }}
+      major_tag: ${{ steps.update-semver.outputs.major }}
+      minor_tag: ${{ steps.update-semver.outputs.minor }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -364,7 +366,7 @@ jobs:
           TAG="${{ needs.version.outputs.tag_name }}"
           slsa-verifier verify-artifact \
             --source-uri "github.com/$REPO_NAME" \
-            --provenance-path <(curl -sfSL https://github.com/$REPO_NAME/releases/download/${TAG}/${TAG}.sha.intoto.jsonl) \
+            --provenance-path <(curl -sfSL "https://github.com/$REPO_NAME/releases/download/${TAG}/${TAG}.sha.intoto.jsonl") \
             <(gh api "repos/$REPO_NAME/git/refs/tags/${TAG}" --jq '.object.sha')
 
           echo "✅ SLSA provenance verification successful"
