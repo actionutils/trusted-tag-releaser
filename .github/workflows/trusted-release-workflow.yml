@@ -321,13 +321,11 @@ jobs:
 
             ---
 
-            1) Using slsa-verifier
+            ### 1) Using slsa-verifier
 
             ```
-            # These values are pre-filled for this release
             REPO="${{ github.repository }}"
             TAG="${{ needs.version.outputs.tag_name }}"
-
             # Fetch tag object SHA from GitHub API (same as `git rev-parse <tag>`)
             TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${{ needs.version.outputs.tag_name }}" | jq -r '.object.sha')
 
@@ -338,31 +336,24 @@ jobs:
               <(echo "$TAG_SHA")
             ```
 
-            Expected output includes a success message indicating the provenance matches the source and subject.
-
             ---
 
-            2) Using actionutils/trusted-tag-verifier (GitHub Actions example)
+            ### 2) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
 
             Add a lightweight workflow step to verify the signed tag for this release:
 
             ```
-            name: Verify Release Tag
-            on: [workflow_dispatch]
             jobs:
               verify:
                 runs-on: ubuntu-latest
                 steps:
-                  - name: Verify tag signature and identity
-                    uses: actionutils/trusted-tag-verifier@v0
+                  - uses: actionutils/trusted-tag-verifier@v0
                     with:
                       verify: '${{ github.repository }}@${{ needs.version.outputs.tag_name }}'
                       fail-on-verification-error: 'true'
                       certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
                       certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
             ```
-
-            Adjust the identity regexp to your policy if you fork this workflow.
 
             </details>
         run: |
