@@ -33,6 +33,7 @@ jobs:
       contents: write    # Required for release and tag creation
       pull-requests: write # Required for bumpr commenting
       attestations: write # Required for build provenance attestation
+      actions: read      # Required for SLSA generator
     uses: ./.github/workflows/trusted-release-workflow.yml
     with:
       environment: release
