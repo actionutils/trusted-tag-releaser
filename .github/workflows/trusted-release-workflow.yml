@@ -340,8 +340,6 @@ jobs:
 
             ### 2) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
 
-            Add a lightweight workflow step to verify the signed tag for this release:
-
             ```
             jobs:
               verify:
@@ -353,6 +351,17 @@ jobs:
                       fail-on-verification-error: 'true'
                       certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
                       certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+            ```
+
+            ### 3) Using [gitsign](https://github.com/sigstore/gitsign)
+
+            Clone ${{ github.repository }} and run the following command.
+
+            ```
+            gitsign verify-tag \
+              --certificate-oidc-issuer='https://token.actions.githubusercontent.com'  \
+              --certificate-identity-regexp='^https://github.com/actionutils/trusted-tag-releaser' \
+              ${{ needs.version.outputs.tag_name }}
             ```
 
             </details>
