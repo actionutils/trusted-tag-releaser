@@ -74,7 +74,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # shellcheck disable=SC2016,SC1003
           echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
@@ -167,8 +166,7 @@ jobs:
 
       - name: Approve release
         run: |
-          # shellcheck disable=SC2016,SC1003
-          echo "Release approved in the '${{ inputs.environment }}' environment"
+          echo "Release approved in the ${{ inputs.environment }} environment"
           echo "This job exists to satisfy environment deployment requirements."
 
   # Version management and tag creation job
@@ -368,7 +366,6 @@ jobs:
 
             </details>
         run: |
-          # shellcheck disable=SC2016
           TAG_NAME="${{ needs.version.outputs.tag_name }}"
           REPO="${GITHUB_REPOSITORY}"
 
