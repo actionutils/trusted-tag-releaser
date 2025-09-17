@@ -195,7 +195,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       # Set up signed tag configuration
-      - uses: chainguard-dev/actions/setup-gitsign@f632aec66edeebe245ad686a33a0c0a2160cac31
+      - uses: chainguard-dev/actions/setup-gitsign@cd899cc96227b82170571cad1c3d6378d8cba678
 
       # EXPERIMENTAL: Use gitsign offline mode
       - run: git config --local gitsign.rekorMode offline
