@@ -286,6 +286,7 @@ jobs:
       upload-assets: true
       upload-tag-name: ${{ needs.version.outputs.tag_name }}
       draft-release: true
+      provenance-name: release-provenance.intoto.jsonl
 
   # Create GitHub Release job
   release:
@@ -366,7 +367,7 @@ jobs:
           TAG="${{ needs.version.outputs.tag_name }}"
           slsa-verifier verify-artifact \
             --source-uri "github.com/$REPO_NAME" \
-            --provenance-path <(curl -sfSL "https://github.com/$REPO_NAME/releases/download/${TAG}/${TAG}.sha.intoto.jsonl") \
+            --provenance-path <(curl -sfSL "https://github.com/$REPO_NAME/releases/download/release-provenance.intoto.jsonl") \
             <(gh api "repos/$REPO_NAME/git/refs/tags/${TAG}" --jq '.object.sha')
 
           echo "✅ SLSA provenance verification successful"
