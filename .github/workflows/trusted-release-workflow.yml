@@ -336,56 +336,56 @@ jobs:
           {
             echo "$RELEASE_NOTES"
             echo
-            cat <<EOF
-<details>
-<summary>📋 Release Verification Instructions</summary>
+            cat <<'EOF'
+            <details>
+            <summary>📋 Release Verification Instructions</summary>
 
-Verify this release and its tag provenance using the following examples.
+            Verify this release and its tag provenance using the following examples.
 
----
+            ---
 
-1) Using slsa-verifier (same approach as our verify-release job)
+            1) Using slsa-verifier (same approach as our verify-release job)
 
-```
-# Set variables
-REPO="${REPO}"
-TAG="${TAG_NAME}"
+            ```
+            # Set variables
+            REPO="${REPO}"
+            TAG="${TAG_NAME}"
 
-# Verify SLSA provenance for the tag SHA virtual artifact
-slsa-verifier verify-artifact \
-  --source-uri "github.com/${REPO}" \
-  --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
-  <(gh api "repos/${REPO}/git/refs/tags/${TAG}" --jq '.object.sha')
-```
+            # Verify SLSA provenance for the tag SHA virtual artifact
+            slsa-verifier verify-artifact \
+              --source-uri "github.com/${REPO}" \
+              --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
+              <(gh api "repos/${REPO}/git/refs/tags/${TAG}" --jq '.object.sha')
+            ```
 
-Expected output includes a success message indicating the provenance matches the source and subject.
+            Expected output includes a success message indicating the provenance matches the source and subject.
 
----
+            ---
 
-2) Using actionutils/trusted-tag-verifier (GitHub Actions example)
+            2) Using actionutils/trusted-tag-verifier (GitHub Actions example)
 
-Add a lightweight workflow step to verify the signed tag for this release:
+            Add a lightweight workflow step to verify the signed tag for this release:
 
-```
-name: Verify Release Tag
-on: [workflow_dispatch]
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify tag signature and identity
-        uses: actionutils/trusted-tag-verifier@v0
-        with:
-          verify: '${REPO}@${TAG_NAME}'
-          fail-on-verification-error: 'true'
-          certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
-          certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
-```
+            ```
+            name: Verify Release Tag
+            on: [workflow_dispatch]
+            jobs:
+              verify:
+                runs-on: ubuntu-latest
+                steps:
+                  - name: Verify tag signature and identity
+                    uses: actionutils/trusted-tag-verifier@v0
+                    with:
+                      verify: '${REPO}@${TAG_NAME}'
+                      fail-on-verification-error: 'true'
+                      certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+                      certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+            ```
 
-Adjust the identity regexp to your policy if you fork this workflow.
+            Adjust the identity regexp to your policy if you fork this workflow.
 
-</details>
-EOF
+            </details>
+          EOF
           } > "$NOTES_FILE"
 
           # Edit existing draft release (created by SLSA generator) with generated notes + verification section
