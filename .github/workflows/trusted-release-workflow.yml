@@ -353,6 +353,8 @@ jobs:
                       certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
             ```
 
+            Note that it uses [gitsign](https://github.com/sigstore/gitsign) internally.
+
             ### 3) Using [gitsign](https://github.com/sigstore/gitsign)
 
             Clone ${{ github.repository }} and run the following command.
