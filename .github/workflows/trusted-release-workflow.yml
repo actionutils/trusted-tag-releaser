@@ -108,12 +108,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
         run: |
           NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
-          TEMP_BRANCH="keep-ref-${NEXT_VERSION}"
           COMMIT_SHA="${{ github.sha }}"
+          # Include short commit hash to ensure uniqueness across re-runs/concurrent runs
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TEMP_BRANCH="keep-ref-${NEXT_VERSION}-${SHORT_SHA}"
 
           echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
           echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
           echo "when the main branch is updated with different workflow files during release."
+          echo "Branch includes commit hash for uniqueness in case of re-runs or concurrent workflows."
 
           # Create the temporary branch using GitHub API
           # This is cleaner than using git commands and doesn't require git config changes
@@ -528,9 +531,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          # Use the next_version from release-check job to construct branch name
+          # Use the next_version and commit SHA to construct branch name
           NEXT_VERSION="${{ needs.release-check.outputs.next_version }}"
-          TEMP_BRANCH="keep-ref-${NEXT_VERSION}"
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TEMP_BRANCH="keep-ref-${NEXT_VERSION}-${SHORT_SHA}"
 
           echo "Cleaning up temporary branch '${TEMP_BRANCH}' used for workflow permission workaround"
 
@@ -540,6 +545,21 @@ jobs:
             echo "✅ Temporary branch '${TEMP_BRANCH}' deleted successfully"
           else
             echo "ℹ️ Temporary branch '${TEMP_BRANCH}' not found (may have been already deleted)"
+          fi
+
+          # Also try to clean up any old keep-ref branches from previous failed runs
+          echo "Checking for old keep-ref branches to clean up..."
+          OLD_BRANCHES=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads" --jq '.[] | select(.ref | startswith("refs/heads/keep-ref-")) | .ref' 2>/dev/null || true)
+          if [[ -n "${OLD_BRANCHES}" ]]; then
+            echo "Found old keep-ref branches:"
+            echo "${OLD_BRANCHES}"
+            for BRANCH_REF in ${OLD_BRANCHES}; do
+              BRANCH_NAME="${BRANCH_REF#refs/heads/}"
+              echo "Deleting old branch: ${BRANCH_NAME}"
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/${BRANCH_REF}" || true
+            done
+          else
+            echo "No old keep-ref branches found"
           fi
 
           echo "Cleanup completed"
