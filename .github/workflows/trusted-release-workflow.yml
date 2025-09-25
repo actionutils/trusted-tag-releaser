@@ -218,6 +218,31 @@ jobs:
       - id: bumpr
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
 
+      # Create temporary branch to prevent GitHub workflow permission error
+      # This is a workaround for the issue where pushing tags fails if no branch head
+      # contains the same workflow files as the tagged commit.
+      # See: https://github.com/orgs/community/discussions/151442
+      - name: Create temporary branch for tag push workaround
+        if: steps.bumpr.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          TAG_NAME="${{ steps.bumpr.outputs.next_version }}"
+          TEMP_BRANCH="keep-ref-${TAG_NAME}"
+
+          echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
+          echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
+          echo "when the main branch is updated with different workflow files during release."
+
+          # Create and push the temporary branch pointing to the current commit
+          git checkout -b "${TEMP_BRANCH}"
+          git push origin "${TEMP_BRANCH}"
+
+          # Switch back to the original state
+          git checkout -
+
+          echo "temp_branch=${TEMP_BRANCH}" >> "$GITHUB_OUTPUT"
+
       # Note: Major and minor tags will be updated after release creation
 
       # Get tag name from bumpr output only
@@ -445,6 +470,27 @@ jobs:
         id: update-semver
         with:
           tag: ${{ needs.version.outputs.tag_name }}
+
+      # Clean up temporary branch created during tag push
+      # This branch was created as a workaround for GitHub's workflow permission issue
+      # See: https://github.com/orgs/community/discussions/151442
+      - name: Delete temporary branch after successful tag creation
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          TAG_NAME="${{ needs.version.outputs.tag_name }}"
+          TEMP_BRANCH="keep-ref-${TAG_NAME}"
+
+          echo "Cleaning up temporary branch '${TEMP_BRANCH}' after successful release"
+
+          # Delete the temporary branch (ignore errors if it doesn't exist)
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" --silent 2>/dev/null; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" || true
+            echo "✓ Temporary branch deleted successfully"
+          else
+            echo "✓ Temporary branch already deleted or doesn't exist"
+          fi
 
   # Verify the release using gh attestation verify
   verify-release:
