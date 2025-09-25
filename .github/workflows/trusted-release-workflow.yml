@@ -109,23 +109,23 @@ jobs:
         run: |
           NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
           TEMP_BRANCH="keep-ref-${NEXT_VERSION}"
+          COMMIT_SHA="${{ github.sha }}"
 
           echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
           echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
           echo "when the main branch is updated with different workflow files during release."
 
-          # Configure git for push
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Create the temporary branch using GitHub API
+          # This is cleaner than using git commands and doesn't require git config changes
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/heads/${TEMP_BRANCH}" \
+            -f "sha=${COMMIT_SHA}"
 
-          # Create and push the temporary branch pointing to the current commit
-          git checkout -b "${TEMP_BRANCH}"
-          git push origin "${TEMP_BRANCH}"
-
-          # Switch back to the original state
-          git checkout -
-
-          echo "Temporary branch '${TEMP_BRANCH}' created successfully"
+          echo "✅ Temporary branch '${TEMP_BRANCH}' created successfully at commit ${COMMIT_SHA}"
 
       # Add release information to job summary
       - name: Add release information to job summary
