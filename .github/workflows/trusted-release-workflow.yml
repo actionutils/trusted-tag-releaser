@@ -74,10 +74,33 @@ jobs:
           dry_run: true
 
       # Create temporary branch to prevent GitHub workflow permission error
-      # This is a workaround for the issue where pushing tags fails if no branch head
-      # contains the same workflow files as the tagged commit.
-      # We create this branch early, before the approval step, since the main branch
-      # might be updated while waiting for human approval.
+      #
+      # PROBLEM:
+      # GitHub incorrectly requires 'workflow: write' permission when pushing tags,
+      # even though tags don't actually create or update workflows. The error message:
+      # "refusing to allow a GitHub App to create or update workflow .github/workflows/xxx.yaml without workflows permission"
+      #
+      # This error occurs when:
+      # 1. This release workflow is running
+      # 2. The main branch gets updated with changes to .github/workflows/
+      # 3. We try to push a tag pointing to the older commit
+      # 4. GitHub rejects it because no branch HEAD has the same workflow files
+      #
+      # WHY WE CAN'T JUST ADD 'workflow: write':
+      # The default GITHUB_TOKEN in GitHub Actions cannot be granted 'workflow: write'
+      # permission for security reasons. Using a PAT with this permission is not
+      # recommended as it bypasses important security boundaries.
+      #
+      # WORKAROUND:
+      # Create a temporary 'keep-ref-<version>' branch at the release commit.
+      # This ensures at least one branch exists with the exact workflow files
+      # from the release commit, satisfying GitHub's check.
+      #
+      # TIMING:
+      # We create this branch early (right after determining the version) because
+      # the release-approval job may wait for human approval, during which the
+      # main branch could be updated.
+      #
       # See: https://github.com/orgs/community/discussions/151442
       - name: Create temporary branch for tag push workaround
         if: steps.bumpr-dry-run.outputs.skip != 'true'
@@ -478,7 +501,13 @@ jobs:
           tag: ${{ needs.version.outputs.tag_name }}
 
   # Clean up temporary branch that was created as a workaround
-  # This job always runs to ensure cleanup happens even if other jobs fail
+  #
+  # This job deletes the 'keep-ref-<version>' branch that was created to work around
+  # GitHub's workflow permission issue. The branch is no longer needed after all tags
+  # have been successfully created.
+  #
+  # The job runs with 'if: always()' to ensure cleanup happens even if other jobs fail,
+  # preventing accumulation of temporary branches in the repository.
   cleanup-temp-branch:
     needs: [release-check, update-semver-tags]
     # Always run cleanup, even if previous jobs failed, but only if we started a release
