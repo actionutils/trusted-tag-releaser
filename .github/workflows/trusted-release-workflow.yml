@@ -25,6 +25,10 @@ on:
         description: 'Environment for protecting the release flow'
         required: false
         type: string
+      release-notes:
+        description: 'Custom release notes content (overrides auto-generated notes)'
+        required: false
+        type: string
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -73,6 +77,7 @@ jobs:
       - name: Add release information to job summary
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
         run: |
           echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
 
@@ -119,30 +124,41 @@ jobs:
                 echo ""
               } >> "$GITHUB_STEP_SUMMARY"
 
-              # Generate and add release notes using GitHub API
+              # Generate and add release notes
               {
                 echo "### 📝 Release Notes Preview"
                 echo ""
               } >> "$GITHUB_STEP_SUMMARY"
 
-              # Call GitHub API to generate release notes
-              REPO="${{ github.repository }}"
+              # Check if custom release notes are provided
+              if [[ -n "${CUSTOM_RELEASE_NOTES}" ]]; then
+                # Use custom release notes
+                {
+                  echo "**Note:** Using custom release notes provided as input"
+                  echo ""
+                  echo "${CUSTOM_RELEASE_NOTES}"
+                  echo ""
+                } >> "$GITHUB_STEP_SUMMARY"
+              else
+                # Generate release notes using GitHub API
+                REPO="${{ github.repository }}"
 
-              # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
-              RELEASE_NOTES=$(gh api \
-                --method POST \
-                -H "Accept: application/vnd.github+json" \
-                "/repos/${REPO}/releases/generate-notes" \
-                -f target_commitish="${{ github.sha }}" \
-                -f tag_name="$NEXT_VERSION" \
-                -f previous_tag_name="$CURRENT_VERSION" \
-                --jq '.body')
+                # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
+                RELEASE_NOTES=$(gh api \
+                  --method POST \
+                  -H "Accept: application/vnd.github+json" \
+                  "/repos/${REPO}/releases/generate-notes" \
+                  -f target_commitish="${{ github.sha }}" \
+                  -f tag_name="$NEXT_VERSION" \
+                  -f previous_tag_name="$CURRENT_VERSION" \
+                  --jq '.body')
 
-              # Add the generated release notes to the summary
-              {
-                echo "$RELEASE_NOTES"
-                echo ""
-              } >> "$GITHUB_STEP_SUMMARY"
+                # Add the generated release notes to the summary
+                {
+                  echo "$RELEASE_NOTES"
+                  echo ""
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
             fi
           fi
 
@@ -368,20 +384,28 @@ jobs:
         run: |
           TAG_NAME="${{ needs.version.outputs.tag_name }}"
           REPO="${GITHUB_REPOSITORY}"
+          CUSTOM_RELEASE_NOTES="${{ inputs.release-notes }}"
 
-          # Generate release notes using GitHub API
-          echo "Generating release notes using GitHub API..."
-          # Get the current version from bumpr output (will be empty string if not set)
-          CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
+          # Determine release notes
+          if [[ -n "${CUSTOM_RELEASE_NOTES}" ]]; then
+            # Use custom release notes if provided
+            echo "Using custom release notes provided as input..."
+            RELEASE_NOTES="${CUSTOM_RELEASE_NOTES}"
+          else
+            # Generate release notes using GitHub API
+            echo "Generating release notes using GitHub API..."
+            # Get the current version from bumpr output (will be empty string if not set)
+            CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
 
-          # Call the API with the parameters
-          RELEASE_NOTES=$(gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${REPO}/releases/generate-notes" \
-            -f tag_name="$TAG_NAME" \
-            -f previous_tag_name="$CURRENT_VERSION" \
-            --jq '.body')
+            # Call the API with the parameters
+            RELEASE_NOTES=$(gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${REPO}/releases/generate-notes" \
+              -f tag_name="$TAG_NAME" \
+              -f previous_tag_name="$CURRENT_VERSION" \
+              --jq '.body')
+          fi
 
           # Append verification instructions to the generated release notes
           NOTES_FILE="$(mktemp)"
