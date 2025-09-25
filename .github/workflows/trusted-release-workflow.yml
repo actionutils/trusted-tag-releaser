@@ -29,6 +29,10 @@ on:
         description: 'Custom release notes content (overrides auto-generated notes)'
         required: false
         type: string
+      semver-tags-environment:
+        description: 'Environment for protecting the major/minor semver tags update (allows using wait timers to delay v1/v2 tag updates)'
+        required: false
+        type: string
     secrets:
       github-token:
         description: 'GitHub token with appropriate permissions'
@@ -480,6 +484,10 @@ jobs:
     needs: [release, version]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
+    environment: ${{ inputs.semver-tags-environment }}
+    concurrency:
+      group: "semver-tags-update"
+      cancel-in-progress: true
     permissions:
       id-token: write # Enable OIDC for gitsign
       contents: write # Required to update tags
