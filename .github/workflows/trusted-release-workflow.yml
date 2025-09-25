@@ -477,26 +477,43 @@ jobs:
         with:
           tag: ${{ needs.version.outputs.tag_name }}
 
+  # Clean up temporary branch that was created as a workaround
+  # This job always runs to ensure cleanup happens even if other jobs fail
+  cleanup-temp-branch:
+    needs: [release-check, version, release, update-version-tags]
+    # Always run cleanup, even if previous jobs failed, but only if we started a release
+    if: always() && needs.release-check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to delete branch
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       # Clean up temporary branch created during tag push
       # This branch was created as a workaround for GitHub's workflow permission issue
       # See: https://github.com/orgs/community/discussions/151442
-      - name: Delete temporary branch after successful tag creation
-        if: always()
+      - name: Delete temporary branch
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          TAG_NAME="${{ needs.version.outputs.tag_name }}"
-          TEMP_BRANCH="keep-ref-${TAG_NAME}"
+          # Use the next_version from release-check job to construct branch name
+          NEXT_VERSION="${{ needs.release-check.outputs.next_version }}"
+          TEMP_BRANCH="keep-ref-${NEXT_VERSION}"
 
-          echo "Cleaning up temporary branch '${TEMP_BRANCH}' after successful release"
+          echo "Cleaning up temporary branch '${TEMP_BRANCH}' used for workflow permission workaround"
 
           # Delete the temporary branch (ignore errors if it doesn't exist)
           if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" --silent 2>/dev/null; then
             gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" || true
-            echo "✓ Temporary branch deleted successfully"
+            echo "✅ Temporary branch '${TEMP_BRANCH}' deleted successfully"
           else
-            echo "✓ Temporary branch already deleted or doesn't exist"
+            echo "ℹ️ Temporary branch '${TEMP_BRANCH}' not found (may have been already deleted)"
           fi
+
+          echo "Cleanup completed"
 
   # Verify the release using gh attestation verify
   verify-release:
