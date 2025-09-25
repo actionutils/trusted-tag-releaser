@@ -57,6 +57,7 @@ jobs:
       next_version: ${{ steps.bumpr-dry-run.outputs.next_version }}
       current_version: ${{ steps.bumpr-dry-run.outputs.current_version }}
       message: ${{ steps.bumpr-dry-run.outputs.message }}
+      temp_branch: ${{ steps.create-temp-branch.outputs.temp_branch }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -103,6 +104,7 @@ jobs:
       #
       # See: https://github.com/orgs/community/discussions/151442
       - name: Create temporary branch for tag push workaround
+        id: create-temp-branch
         if: steps.bumpr-dry-run.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
@@ -129,6 +131,9 @@ jobs:
             -f "sha=${COMMIT_SHA}"
 
           echo "✅ Temporary branch '${TEMP_BRANCH}' created successfully at commit ${COMMIT_SHA}"
+
+          # Output the branch name for cleanup job
+          echo "temp_branch=${TEMP_BRANCH}" >> "$GITHUB_OUTPUT"
 
       # Add release information to job summary
       - name: Add release information to job summary
@@ -531,11 +536,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
-          # Use the next_version and commit SHA to construct branch name
-          NEXT_VERSION="${{ needs.release-check.outputs.next_version }}"
-          COMMIT_SHA="${{ github.sha }}"
-          SHORT_SHA="${COMMIT_SHA:0:7}"
-          TEMP_BRANCH="keep-ref-${NEXT_VERSION}-${SHORT_SHA}"
+          # Get the exact branch name that was created
+          TEMP_BRANCH="${{ needs.release-check.outputs.temp_branch }}"
+
+          if [[ -z "${TEMP_BRANCH}" ]]; then
+            echo "No temporary branch to clean up (may have been skipped)"
+            exit 0
+          fi
 
           echo "Cleaning up temporary branch '${TEMP_BRANCH}' used for workflow permission workaround"
 
