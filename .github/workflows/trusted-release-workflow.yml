@@ -198,8 +198,6 @@ jobs:
       tag_name: ${{ steps.tag.outputs.value }}
       version: ${{ steps.extract-version.outputs.version }}
       current_version: ${{ steps.bumpr.outputs.current_version }}
-      major_tag: ${{ steps.update-semver.outputs.major }}
-      minor_tag: ${{ steps.update-semver.outputs.minor }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -220,12 +218,7 @@ jobs:
       - id: bumpr
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
 
-      # Update corresponding major and minor tags
-      - uses: haya14busa/action-update-semver@v1.5.1
-        id: update-semver
-        if: steps.bumpr.outputs.skip != 'true'
-        with:
-          tag: ${{ steps.bumpr.outputs.next_version }}
+      # Note: Major and minor tags will be updated after release creation
 
       # Get tag name from bumpr output only
       - id: tag
@@ -420,9 +413,42 @@ jobs:
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
 
+  # Update major and minor version tags after release is created
+  update-version-tags:
+    needs: [release, version]
+    if: needs.version.outputs.tag_name != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Enable OIDC for gitsign
+      contents: write # Required to update tags
+    outputs:
+      major_tag: ${{ steps.update-semver.outputs.major }}
+      minor_tag: ${{ steps.update-semver.outputs.minor }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ needs.version.outputs.tag_name }}
+
+      # Set up signed tag configuration
+      - uses: chainguard-dev/actions/setup-gitsign@de56c2728beb0a0f371bff2ce2ee4b8afee4b5e8
+
+      # EXPERIMENTAL: Use gitsign offline mode
+      - run: git config --local gitsign.rekorMode offline
+
+      # Update corresponding major and minor tags
+      - uses: haya14busa/action-update-semver@v1.5.1
+        id: update-semver
+        with:
+          tag: ${{ needs.version.outputs.tag_name }}
+
   # Verify the release using gh attestation verify
   verify-release:
-    needs: [release, slsa-provenance, version]
+    needs: [release, slsa-provenance, version, update-version-tags]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -463,20 +489,20 @@ jobs:
 
       - name: Verify Major Tag
         id: verify-major-tag
-        if: needs.version.outputs.major_tag != ''
+        if: needs.update-version-tags.outputs.major_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.version.outputs.major_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.major_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
 
       - name: Verify Minor Tag
         id: verify-minor-tag
-        if: needs.version.outputs.minor_tag != ''
+        if: needs.update-version-tags.outputs.minor_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.version.outputs.minor_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.minor_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
