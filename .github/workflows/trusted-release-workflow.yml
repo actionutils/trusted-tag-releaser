@@ -444,8 +444,8 @@ jobs:
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
 
-  # Update major and minor version tags after release is created
-  update-version-tags:
+  # Update major and minor semver tags after release is created
+  update-semver-tags:
     needs: [release, version]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
@@ -480,7 +480,7 @@ jobs:
   # Clean up temporary branch that was created as a workaround
   # This job always runs to ensure cleanup happens even if other jobs fail
   cleanup-temp-branch:
-    needs: [release-check, update-version-tags]
+    needs: [release-check, update-semver-tags]
     # Always run cleanup, even if previous jobs failed, but only if we started a release
     if: always() && needs.release-check.outputs.skip != 'true'
     runs-on: ubuntu-latest
@@ -517,7 +517,7 @@ jobs:
 
   # Verify the release using gh attestation verify
   verify-release:
-    needs: [release, slsa-provenance, version, update-version-tags]
+    needs: [release, slsa-provenance, version, update-semver-tags]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -558,20 +558,20 @@ jobs:
 
       - name: Verify Major Tag
         id: verify-major-tag
-        if: needs.update-version-tags.outputs.major_tag != ''
+        if: needs.update-semver-tags.outputs.major_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.major_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-semver-tags.outputs.major_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
 
       - name: Verify Minor Tag
         id: verify-minor-tag
-        if: needs.update-version-tags.outputs.minor_tag != ''
+        if: needs.update-semver-tags.outputs.minor_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.minor_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-semver-tags.outputs.minor_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
