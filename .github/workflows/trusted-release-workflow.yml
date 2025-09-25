@@ -57,6 +57,7 @@ jobs:
       next_version: ${{ steps.bumpr-dry-run.outputs.next_version }}
       current_version: ${{ steps.bumpr-dry-run.outputs.current_version }}
       message: ${{ steps.bumpr-dry-run.outputs.message }}
+      temp_branch: ${{ steps.create-temp-branch.outputs.temp_branch }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -72,6 +73,67 @@ jobs:
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
         with:
           dry_run: true
+
+      # Create temporary branch to prevent GitHub workflow permission error
+      #
+      # PROBLEM:
+      # GitHub incorrectly requires 'workflow: write' permission when pushing tags,
+      # even though tags don't actually create or update workflows. The error message:
+      # "refusing to allow a GitHub App to create or update workflow .github/workflows/xxx.yaml without workflows permission"
+      #
+      # This error occurs when:
+      # 1. This release workflow is running
+      # 2. The main branch gets updated with changes to .github/workflows/
+      # 3. We try to push a tag pointing to the older commit
+      # 4. GitHub rejects it because no branch HEAD has the same workflow files
+      #
+      # WHY WE CAN'T JUST ADD 'workflow: write':
+      # The default GITHUB_TOKEN in GitHub Actions cannot be granted 'workflow: write'
+      # permission for security reasons. Using a PAT with this permission is not
+      # recommended as it bypasses important security boundaries.
+      #
+      # WORKAROUND:
+      # Create a temporary 'keep-ref-<version>' branch at the release commit.
+      # This ensures at least one branch exists with the exact workflow files
+      # from the release commit, satisfying GitHub's check.
+      #
+      # TIMING:
+      # We create this branch early (right after determining the version) because
+      # the release-approval job may wait for human approval, during which the
+      # main branch could be updated.
+      #
+      # See: https://github.com/orgs/community/discussions/151442
+      - name: Create temporary branch for tag push workaround
+        id: create-temp-branch
+        if: steps.bumpr-dry-run.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
+        run: |
+          NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
+          COMMIT_SHA="${{ github.sha }}"
+          # Include short commit hash to ensure uniqueness across re-runs/concurrent runs
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TEMP_BRANCH="keep-ref-${NEXT_VERSION}-${SHORT_SHA}"
+
+          echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
+          echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
+          echo "when the main branch is updated with different workflow files during release."
+          echo "Branch includes commit hash for uniqueness in case of re-runs or concurrent workflows."
+
+          # Create the temporary branch using GitHub API
+          # This is cleaner than using git commands and doesn't require git config changes
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/heads/${TEMP_BRANCH}" \
+            -f "sha=${COMMIT_SHA}"
+
+          echo "✅ Temporary branch '${TEMP_BRANCH}' created successfully at commit ${COMMIT_SHA}"
+
+          # Output the branch name for cleanup job
+          echo "temp_branch=${TEMP_BRANCH}" >> "$GITHUB_OUTPUT"
 
       # Add release information to job summary
       - name: Add release information to job summary
@@ -413,8 +475,8 @@ jobs:
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
 
-  # Update major and minor version tags after release is created
-  update-version-tags:
+  # Update major and minor semver tags after release is created
+  update-semver-tags:
     needs: [release, version]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
@@ -446,9 +508,57 @@ jobs:
         with:
           tag: ${{ needs.version.outputs.tag_name }}
 
+  # Clean up temporary branch that was created as a workaround
+  #
+  # This job deletes the 'keep-ref-<version>' branch that was created to work around
+  # GitHub's workflow permission issue. The branch is no longer needed after all tags
+  # have been successfully created.
+  #
+  # The job runs with 'if: always()' to ensure cleanup happens even if other jobs fail,
+  # preventing accumulation of temporary branches in the repository.
+  cleanup-temp-branch:
+    needs: [release-check, update-semver-tags]
+    # Always run cleanup, even if previous jobs failed, but only if we started a release
+    if: always() && needs.release-check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to delete branch
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      # Clean up temporary branch created during tag push
+      # This branch was created as a workaround for GitHub's workflow permission issue
+      # See: https://github.com/orgs/community/discussions/151442
+      - name: Delete temporary branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          # Get the exact branch name that was created
+          TEMP_BRANCH="${{ needs.release-check.outputs.temp_branch }}"
+
+          if [[ -z "${TEMP_BRANCH}" ]]; then
+            echo "No temporary branch to clean up (may have been skipped)"
+            exit 0
+          fi
+
+          echo "Cleaning up temporary branch '${TEMP_BRANCH}' used for workflow permission workaround"
+
+          # Delete the temporary branch (ignore errors if it doesn't exist)
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" --silent 2>/dev/null; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${TEMP_BRANCH}" || true
+            echo "✅ Temporary branch '${TEMP_BRANCH}' deleted successfully"
+          else
+            echo "ℹ️ Temporary branch '${TEMP_BRANCH}' not found (may have been already deleted)"
+          fi
+
+          echo "Cleanup completed"
+
   # Verify the release using gh attestation verify
   verify-release:
-    needs: [release, slsa-provenance, version, update-version-tags]
+    needs: [release, slsa-provenance, version, update-semver-tags]
     if: needs.version.outputs.tag_name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -489,20 +599,20 @@ jobs:
 
       - name: Verify Major Tag
         id: verify-major-tag
-        if: needs.update-version-tags.outputs.major_tag != ''
+        if: needs.update-semver-tags.outputs.major_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.major_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-semver-tags.outputs.major_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
 
       - name: Verify Minor Tag
         id: verify-minor-tag
-        if: needs.update-version-tags.outputs.minor_tag != ''
+        if: needs.update-semver-tags.outputs.minor_tag != ''
         uses: actionutils/trusted-tag-verifier@v0
         with:
-          verify: '${{ github.repository }}@${{ needs.update-version-tags.outputs.minor_tag }}'
+          verify: '${{ github.repository }}@${{ needs.update-semver-tags.outputs.minor_tag }}'
           fail-on-verification-error: 'true'
           certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
           certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
