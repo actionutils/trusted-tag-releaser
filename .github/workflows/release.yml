@@ -6,28 +6,38 @@ on:
     branches:
       - main  # Only run on main branch pushes (PR merges)
   pull_request:
-    types:
-      - labeled  # Run when PRs are labeled
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  # Post version bump information comment on PR when labeled
-  release-preview-comment:
-    if: github.event.action == 'labeled'
+  release-pr:
     permissions:
+      contents: write
       pull-requests: write
-    uses: ./.github/workflows/release-preview-comment.yml
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      issues: write
+      statuses: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_pr: ${{ toJSON(steps.release-pr.outputs) }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v5
+      - name: Verify actionutils/create-release-pr
+        uses: actionutils/trusted-tag-verifier@68bef2f18f8ceb5c4dccc5542cadcfbc82ed4656 # v0.5.0
+        with:
+          verify: 'actionutils/create-release-pr'
+      - name: Create or update release PR
+        id: release-pr
+        uses: actionutils/create-release-pr@v0
 
   # Use the reusable trusted tag workflow for releases if approved
   release:
-    if: github.event.action != 'labeled'
-    concurrency:
-      group: "release"
-      cancel-in-progress: false
+    needs: [release-pr]
+    if: fromJSON(needs.release-pr.outputs.release_pr).state == 'release_required'
     permissions:
       id-token: write    # Required for attestations
       contents: write    # Required for release and tag creation
@@ -37,5 +47,6 @@ jobs:
     uses: ./.github/workflows/trusted-release-workflow.yml
     with:
       environment: release
+      release-notes: ${{ fromJSON(needs.release-pr.outputs.release_pr).release_notes }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
