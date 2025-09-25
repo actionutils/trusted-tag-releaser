@@ -554,21 +554,6 @@ jobs:
             echo "ℹ️ Temporary branch '${TEMP_BRANCH}' not found (may have been already deleted)"
           fi
 
-          # Also try to clean up any old keep-ref branches from previous failed runs
-          echo "Checking for old keep-ref branches to clean up..."
-          OLD_BRANCHES=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads" --jq '.[] | select(.ref | startswith("refs/heads/keep-ref-")) | .ref' 2>/dev/null || true)
-          if [[ -n "${OLD_BRANCHES}" ]]; then
-            echo "Found old keep-ref branches:"
-            echo "${OLD_BRANCHES}"
-            for BRANCH_REF in ${OLD_BRANCHES}; do
-              BRANCH_NAME="${BRANCH_REF#refs/heads/}"
-              echo "Deleting old branch: ${BRANCH_NAME}"
-              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/${BRANCH_REF}" || true
-            done
-          else
-            echo "No old keep-ref branches found"
-          fi
-
           echo "Cleanup completed"
 
   # Verify the release using gh attestation verify
