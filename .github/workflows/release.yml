@@ -47,6 +47,7 @@ jobs:
     uses: ./.github/workflows/trusted-release-workflow.yml
     with:
       environment: release
+      semver-tags-environment: release-semver-tags
       release-notes: ${{ fromJSON(needs.release-pr.outputs.release_pr).release_notes }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
