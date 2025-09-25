@@ -73,6 +73,37 @@ jobs:
         with:
           dry_run: true
 
+      # Create temporary branch to prevent GitHub workflow permission error
+      # This is a workaround for the issue where pushing tags fails if no branch head
+      # contains the same workflow files as the tagged commit.
+      # We create this branch early, before the approval step, since the main branch
+      # might be updated while waiting for human approval.
+      # See: https://github.com/orgs/community/discussions/151442
+      - name: Create temporary branch for tag push workaround
+        if: steps.bumpr-dry-run.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
+        run: |
+          NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
+          TEMP_BRANCH="keep-ref-${NEXT_VERSION}"
+
+          echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
+          echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
+          echo "when the main branch is updated with different workflow files during release."
+
+          # Configure git for push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create and push the temporary branch pointing to the current commit
+          git checkout -b "${TEMP_BRANCH}"
+          git push origin "${TEMP_BRANCH}"
+
+          # Switch back to the original state
+          git checkout -
+
+          echo "Temporary branch '${TEMP_BRANCH}' created successfully"
+
       # Add release information to job summary
       - name: Add release information to job summary
         env:
@@ -217,31 +248,6 @@ jobs:
       # Bump version based on PR labels (bump:major,bump:minor,bump:patch)
       - id: bumpr
         uses: haya14busa/action-bumpr@faf6f474bcb6174125cfc569f0b2e24cbf03d496 # v1.11.4
-
-      # Create temporary branch to prevent GitHub workflow permission error
-      # This is a workaround for the issue where pushing tags fails if no branch head
-      # contains the same workflow files as the tagged commit.
-      # See: https://github.com/orgs/community/discussions/151442
-      - name: Create temporary branch for tag push workaround
-        if: steps.bumpr.outputs.skip != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-        run: |
-          TAG_NAME="${{ steps.bumpr.outputs.next_version }}"
-          TEMP_BRANCH="keep-ref-${TAG_NAME}"
-
-          echo "Creating temporary branch '${TEMP_BRANCH}' as workaround for GitHub workflow permission issue"
-          echo "This prevents 'refusing to allow a GitHub App to create or update workflow' errors"
-          echo "when the main branch is updated with different workflow files during release."
-
-          # Create and push the temporary branch pointing to the current commit
-          git checkout -b "${TEMP_BRANCH}"
-          git push origin "${TEMP_BRANCH}"
-
-          # Switch back to the original state
-          git checkout -
-
-          echo "temp_branch=${TEMP_BRANCH}" >> "$GITHUB_OUTPUT"
 
       # Note: Major and minor tags will be updated after release creation
 
