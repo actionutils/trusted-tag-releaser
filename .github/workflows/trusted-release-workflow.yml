@@ -480,7 +480,7 @@ jobs:
   # Clean up temporary branch that was created as a workaround
   # This job always runs to ensure cleanup happens even if other jobs fail
   cleanup-temp-branch:
-    needs: [release-check, version, release, update-version-tags]
+    needs: [release-check, update-version-tags]
     # Always run cleanup, even if previous jobs failed, but only if we started a release
     if: always() && needs.release-check.outputs.skip != 'true'
     runs-on: ubuntu-latest
