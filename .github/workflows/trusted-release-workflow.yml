@@ -401,6 +401,58 @@ jobs:
           CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
           CURRENT_VERSION: ${{ needs.version.outputs.current_version }}
           DRAFT: ${{ inputs.draft }}
+          VERIFICATION_INSTRUCTIONS: |
+            <details>
+            <summary>📋 Release Verification Instructions</summary>
+
+            Verify this release and its tag provenance using the following examples.
+
+            ### 1) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
+
+            ```
+            jobs:
+              verify:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actionutils/trusted-tag-verifier@v0
+                    with:
+                      verify: '${{ github.repository }}@${{ needs.version.outputs.tag_name }}'
+                      fail-on-verification-error: 'true'
+                      certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+                      certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+            ```
+
+            Note that it uses [gitsign](https://github.com/sigstore/gitsign) internally.
+
+            ### 2) Using [gitsign](https://github.com/sigstore/gitsign)
+
+            Clone ${{ github.repository }} and run the following command.
+
+            ```
+            gitsign verify-tag \
+              --certificate-oidc-issuer='https://token.actions.githubusercontent.com'  \
+              --certificate-identity-regexp='^https://github.com/actionutils/trusted-tag-releaser' \
+              ${{ needs.version.outputs.tag_name }}
+            ```
+
+            ### 3) Using [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
+
+            ```
+            TAG="${{ needs.version.outputs.tag_name }}"
+            # Fetch tag object SHA from GitHub API (same as `git rev-parse <tag>`)
+            TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${TAG}" | jq -r '.object.sha')
+
+            # Verify SLSA provenance for the tag SHA virtual artifact
+            slsa-verifier verify-artifact \
+              --source-uri "github.com/${{ github.repository }}" \
+              --provenance-path <(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
+              <(echo "$TAG_SHA")
+            ```
+
+            Note: Unlike (1) and (2), it does not verify git tag signature but verifies the uploaded provenance.
+            Prefer (1) and (2) in general because there is a time lag between tag creation and release creation.
+
+            </details>
         run: |
           REPO="${GITHUB_REPOSITORY}"
 
@@ -422,62 +474,6 @@ jobs:
               -f previous_tag_name="$CURRENT_VERSION" \
               --jq '.body')
           fi
-
-          # Create verification instructions with proper variable substitution
-          VERIFICATION_INSTRUCTIONS=$(cat <<EOF
-          <details>
-          <summary>📋 Release Verification Instructions</summary>
-
-          Verify this release and its tag provenance using the following examples.
-
-          ### 1) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
-
-          \`\`\`
-          jobs:
-            verify:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actionutils/trusted-tag-verifier@v0
-                  with:
-                    verify: '${REPO}@${TAG_NAME}'
-                    fail-on-verification-error: 'true'
-                    certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
-                    certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
-          \`\`\`
-
-          Note that it uses [gitsign](https://github.com/sigstore/gitsign) internally.
-
-          ### 2) Using [gitsign](https://github.com/sigstore/gitsign)
-
-          Clone ${REPO} and run the following command.
-
-          \`\`\`
-          gitsign verify-tag \\
-            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'  \\
-            --certificate-identity-regexp='^https://github.com/actionutils/trusted-tag-releaser' \\
-            ${TAG_NAME}
-          \`\`\`
-
-          ### 3) Using [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
-
-          \`\`\`
-          TAG="${TAG_NAME}"
-          # Fetch tag object SHA from GitHub API (same as \`git rev-parse <tag>\`)
-          TAG_SHA=\$(curl -fsSL "https://api.github.com/repos/${REPO}/git/refs/tags/\${TAG}" | jq -r '.object.sha')
-
-          # Verify SLSA provenance for the tag SHA virtual artifact
-          slsa-verifier verify-artifact \\
-            --source-uri "github.com/${REPO}" \\
-            --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/\${TAG}/release-provenance.intoto.jsonl") \\
-            <(echo "\$TAG_SHA")
-          \`\`\`
-
-          Note: Unlike (1) and (2), it does not verify git tag signature but verifies the uploaded provenance.
-          Prefer (1) and (2) in general because there is a time lag between tag creation and release creation.
-
-          </details>
-          EOF
-          )
 
           # Append verification instructions to the generated release notes
           NOTES_FILE="$(mktemp)"
