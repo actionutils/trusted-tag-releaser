@@ -483,7 +483,7 @@ jobs:
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --notes-file "$NOTES_FILE" \
-            --draft=${DRAFT})
+            --draft="${DRAFT}")
 
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
