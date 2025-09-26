@@ -112,9 +112,9 @@ jobs:
         if: steps.bumpr-dry-run.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
+          NEXT_VERSION: ${{ steps.bumpr-dry-run.outputs.next_version }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
-          NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
-          COMMIT_SHA="${{ github.sha }}"
           # Include short commit hash to ensure uniqueness across re-runs/concurrent runs
           SHORT_SHA="${COMMIT_SHA:0:7}"
           TEMP_BRANCH="keep-ref-${NEXT_VERSION}-${SHORT_SHA}"
@@ -144,10 +144,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
+          SKIP: ${{ steps.bumpr-dry-run.outputs.skip }}
+          NEXT_VERSION: ${{ steps.bumpr-dry-run.outputs.next_version }}
+          CURRENT_VERSION: ${{ steps.bumpr-dry-run.outputs.current_version }}
+          MESSAGE: ${{ steps.bumpr-dry-run.outputs.message }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           echo "# Release Check Summary" >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "${{ steps.bumpr-dry-run.outputs.skip }}" == "true" ]]; then
+          if [[ "${SKIP}" == "true" ]]; then
             {
               echo "## ⚠️ No Release Needed"
               echo "No version bump label was found on the PR. Release will be skipped."
@@ -160,11 +165,9 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             # Use action-bumpr outputs with better formatting
-            if [[ "${{ steps.bumpr-dry-run.outputs.next_version }}" != "" ]]; then
-              CURRENT_VERSION="${{ steps.bumpr-dry-run.outputs.current_version }}"
-              NEXT_VERSION="${{ steps.bumpr-dry-run.outputs.next_version }}"
-              REPO_URL="https://github.com/${{ github.repository }}"
-              COMPARE_URL="$REPO_URL/compare/$CURRENT_VERSION...${{ github.sha }}"
+            if [[ "${NEXT_VERSION}" != "" ]]; then
+              REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+              COMPARE_URL="$REPO_URL/compare/$CURRENT_VERSION...${COMMIT_SHA}"
 
               # Create a more visually appealing format with emojis
               {
@@ -177,9 +180,9 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
 
               # Add tag message if available
-              if [[ "${{ steps.bumpr-dry-run.outputs.message }}" != "" ]]; then
+              if [[ "${MESSAGE}" != "" ]]; then
                 {
-                  echo "📝 **Tag Message:** ${{ steps.bumpr-dry-run.outputs.message }}"
+                  echo "📝 **Tag Message:** ${MESSAGE}"
                   echo ""
                 } >> "$GITHUB_STEP_SUMMARY"
               fi
@@ -207,14 +210,14 @@ jobs:
                 } >> "$GITHUB_STEP_SUMMARY"
               else
                 # Generate release notes using GitHub API
-                REPO="${{ github.repository }}"
+                REPO="${GITHUB_REPOSITORY}"
 
                 # Call the API with the parameters (CURRENT_VERSION will be empty string if not set)
                 RELEASE_NOTES=$(gh api \
                   --method POST \
                   -H "Accept: application/vnd.github+json" \
                   "/repos/${REPO}/releases/generate-notes" \
-                  -f target_commitish="${{ github.sha }}" \
+                  -f target_commitish="${COMMIT_SHA}" \
                   -f tag_name="$NEXT_VERSION" \
                   -f previous_tag_name="$CURRENT_VERSION" \
                   --jq '.body')
@@ -247,8 +250,10 @@ jobs:
           egress-policy: audit
 
       - name: Approve release
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          echo "Release approved in the ${{ inputs.environment }} environment"
+          echo "Release approved in the ${ENVIRONMENT} environment"
           echo "This job exists to satisfy environment deployment requirements."
 
   # Version management and tag creation job
@@ -288,12 +293,15 @@ jobs:
 
       # Get tag name from bumpr output only
       - id: tag
+        env:
+          SKIP: ${{ steps.bumpr.outputs.skip }}
+          NEXT_VERSION: ${{ steps.bumpr.outputs.next_version }}
         run: |
-          if [[ "${{ steps.bumpr.outputs.skip }}" == "true" ]]; then
+          if [[ "${SKIP}" == "true" ]]; then
             echo "value=" >> "$GITHUB_OUTPUT"
             echo "No version bump label found, skipping release."
           else
-            TAG="${{ steps.bumpr.outputs.next_version }}"
+            TAG="${NEXT_VERSION}"
             echo "value=${TAG}" >> "$GITHUB_OUTPUT"
             echo "Next version: ${TAG}"
           fi
@@ -301,8 +309,9 @@ jobs:
       # Extract version number without "v" prefix (v1.2.3 → 1.2.3)
       - id: extract-version
         if: steps.tag.outputs.value != ''
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
-          TAG=${{ steps.tag.outputs.value }}
           VERSION=${TAG#refs/tags/v}
           VERSION=${VERSION#v}
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -331,8 +340,8 @@ jobs:
         id: compute-subjects
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
+          TAG_NAME: ${{ needs.version.outputs.tag_name }}
         run: |
-          TAG_NAME='${{ needs.version.outputs.tag_name }}'
 
           # Create a deterministic virtual artifact content directly from GitHub API (includes trailing newline)
           # Equivalent to: git rev-parse <tag>
@@ -388,62 +397,12 @@ jobs:
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
-          VERIFICATION_INSTRUCTIONS: |
-            <details>
-            <summary>📋 Release Verification Instructions</summary>
-
-            Verify this release and its tag provenance using the following examples.
-
-            ### 1) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
-
-            ```
-            jobs:
-              verify:
-                runs-on: ubuntu-latest
-                steps:
-                  - uses: actionutils/trusted-tag-verifier@v0
-                    with:
-                      verify: '${{ github.repository }}@${{ needs.version.outputs.tag_name }}'
-                      fail-on-verification-error: 'true'
-                      certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
-                      certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
-            ```
-
-            Note that it uses [gitsign](https://github.com/sigstore/gitsign) internally.
-
-            ### 2) Using [gitsign](https://github.com/sigstore/gitsign)
-
-            Clone ${{ github.repository }} and run the following command.
-
-            ```
-            gitsign verify-tag \
-              --certificate-oidc-issuer='https://token.actions.githubusercontent.com'  \
-              --certificate-identity-regexp='^https://github.com/actionutils/trusted-tag-releaser' \
-              ${{ needs.version.outputs.tag_name }}
-            ```
-
-            ### 3) Using [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
-
-            ```
-            TAG="${{ needs.version.outputs.tag_name }}"
-            # Fetch tag object SHA from GitHub API (same as `git rev-parse <tag>`)
-            TAG_SHA=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${TAG}" | jq -r '.object.sha')
-
-            # Verify SLSA provenance for the tag SHA virtual artifact
-            slsa-verifier verify-artifact \
-              --source-uri "github.com/${{ github.repository }}" \
-              --provenance-path <(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/release-provenance.intoto.jsonl") \
-              <(echo "$TAG_SHA")
-            ```
-
-            Note: Unlike (1) and (2), it does not verify git tag signature but verifies the uploaded provenance.
-            Prefer (1) and (2) in general because there is a time lag between tag creation and release creation.
-
-            </details>
+          TAG_NAME: ${{ needs.version.outputs.tag_name }}
+          CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
+          CURRENT_VERSION: ${{ needs.version.outputs.current_version }}
+          DRAFT: ${{ inputs.draft }}
         run: |
-          TAG_NAME="${{ needs.version.outputs.tag_name }}"
           REPO="${GITHUB_REPOSITORY}"
-          CUSTOM_RELEASE_NOTES="${{ inputs.release-notes }}"
 
           # Determine release notes
           if [[ -n "${CUSTOM_RELEASE_NOTES}" ]]; then
@@ -453,8 +412,6 @@ jobs:
           else
             # Generate release notes using GitHub API
             echo "Generating release notes using GitHub API..."
-            # Get the current version from bumpr output (will be empty string if not set)
-            CURRENT_VERSION="${{ needs.version.outputs.current_version }}"
 
             # Call the API with the parameters
             RELEASE_NOTES=$(gh api \
@@ -466,6 +423,62 @@ jobs:
               --jq '.body')
           fi
 
+          # Create verification instructions with proper variable substitution
+          VERIFICATION_INSTRUCTIONS=$(cat <<EOF
+          <details>
+          <summary>📋 Release Verification Instructions</summary>
+
+          Verify this release and its tag provenance using the following examples.
+
+          ### 1) Using [actionutils/trusted-tag-verifier](https://github.com/actionutils/trusted-tag-verifier) (GitHub Actions example)
+
+          \`\`\`
+          jobs:
+            verify:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actionutils/trusted-tag-verifier@v0
+                  with:
+                    verify: '${REPO}@${TAG_NAME}'
+                    fail-on-verification-error: 'true'
+                    certificate-oidc-issuer: 'https://token.actions.githubusercontent.com'
+                    certificate-identity-regexp: '^https://github.com/actionutils/trusted-tag-releaser'
+          \`\`\`
+
+          Note that it uses [gitsign](https://github.com/sigstore/gitsign) internally.
+
+          ### 2) Using [gitsign](https://github.com/sigstore/gitsign)
+
+          Clone ${REPO} and run the following command.
+
+          \`\`\`
+          gitsign verify-tag \\
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'  \\
+            --certificate-identity-regexp='^https://github.com/actionutils/trusted-tag-releaser' \\
+            ${TAG_NAME}
+          \`\`\`
+
+          ### 3) Using [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
+
+          \`\`\`
+          TAG="${TAG_NAME}"
+          # Fetch tag object SHA from GitHub API (same as \`git rev-parse <tag>\`)
+          TAG_SHA=\$(curl -fsSL "https://api.github.com/repos/${REPO}/git/refs/tags/\${TAG}" | jq -r '.object.sha')
+
+          # Verify SLSA provenance for the tag SHA virtual artifact
+          slsa-verifier verify-artifact \\
+            --source-uri "github.com/${REPO}" \\
+            --provenance-path <(curl -fsSL "https://github.com/${REPO}/releases/download/\${TAG}/release-provenance.intoto.jsonl") \\
+            <(echo "\$TAG_SHA")
+          \`\`\`
+
+          Note: Unlike (1) and (2), it does not verify git tag signature but verifies the uploaded provenance.
+          Prefer (1) and (2) in general because there is a time lag between tag creation and release creation.
+
+          </details>
+          EOF
+          )
+
           # Append verification instructions to the generated release notes
           NOTES_FILE="$(mktemp)"
           printf "%s\n\n%s\n" "$RELEASE_NOTES" "$VERIFICATION_INSTRUCTIONS" > "$NOTES_FILE"
@@ -474,7 +487,7 @@ jobs:
           RELEASE_URL=$(gh release edit "$TAG_NAME" \
             --title "Release $TAG_NAME" \
             --notes-file "$NOTES_FILE" \
-            --draft=${{ inputs.draft }})
+            --draft=${DRAFT})
 
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "Release URL: $RELEASE_URL"
@@ -543,9 +556,9 @@ jobs:
       - name: Delete temporary branch
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
+          TEMP_BRANCH: ${{ needs.release-check.outputs.temp_branch }}
         run: |
           # Get the exact branch name that was created
-          TEMP_BRANCH="${{ needs.release-check.outputs.temp_branch }}"
 
           if [[ -z "${TEMP_BRANCH}" ]]; then
             echo "No temporary branch to clean up (may have been skipped)"
@@ -584,11 +597,11 @@ jobs:
       - name: Verify SLSA provenance with slsa-verifier
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
+          TAG: ${{ needs.version.outputs.tag_name }}
         run: |
           set -euo pipefail
 
           REPO_NAME="${GITHUB_REPOSITORY}"
-          TAG="${{ needs.version.outputs.tag_name }}"
           slsa-verifier verify-artifact \
             --source-uri "github.com/$REPO_NAME" \
             --provenance-path <(curl -fsSL "https://github.com/$REPO_NAME/releases/download/${TAG}/release-provenance.intoto.jsonl") \
