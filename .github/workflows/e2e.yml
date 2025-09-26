@@ -113,7 +113,7 @@ jobs:
         with:
           repository: actionutils/test-trusted-tag-releaser
           token: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Configure git
         run: |
