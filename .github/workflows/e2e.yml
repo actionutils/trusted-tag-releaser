@@ -39,38 +39,46 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GITHUB_EVENT_INPUTS_PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          GITHUB_EVENT_INPUTS_SHA: ${{ github.event.inputs.sha }}
+          GITHUB_EVENT_PULL_REQUEST_HTML_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             # For manual triggers
-            if [ -n "${{ github.event.inputs.pr_number }}" ]; then
-              PR_NUMBER="${{ github.event.inputs.pr_number }}"
+            if [ -n "${GITHUB_EVENT_INPUTS_PR_NUMBER}" ]; then
+              PR_NUMBER="${GITHUB_EVENT_INPUTS_PR_NUMBER}"
 
               # If SHA not provided, fetch from PR
-              if [ -z "${{ github.event.inputs.sha }}" ]; then
+              if [ -z "${GITHUB_EVENT_INPUTS_SHA}" ]; then
                 echo "Fetching PR #${PR_NUMBER} information..."
-                PR_INFO=$(gh pr view "${PR_NUMBER}" --repo "${{ github.repository }}" --json headRefOid,headRefName,url)
+                PR_INFO=$(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json headRefOid,headRefName,url)
                 SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
                 HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName')
                 PR_URL=$(echo "$PR_INFO" | jq -r '.url')
                 echo "Fetched SHA: $SHA"
               else
-                SHA="${{ github.event.inputs.sha }}"
-                HEAD_REF="${{ github.ref_name }}"
-                PR_URL="https://github.com/${{ github.repository }}/pull/${PR_NUMBER}"
+                SHA="${GITHUB_EVENT_INPUTS_SHA}"
+                HEAD_REF="${GITHUB_REF_NAME}"
+                PR_URL="https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}"
               fi
             else
               # No PR number provided
               PR_NUMBER="manual"
-              SHA="${{ github.event.inputs.sha || github.sha }}"
-              HEAD_REF="${{ github.ref_name }}"
-              PR_URL="Manual trigger from branch: ${{ github.ref_name }}"
+              SHA="${GITHUB_EVENT_INPUTS_SHA:-${GITHUB_SHA}}"
+              HEAD_REF="${GITHUB_REF_NAME}"
+              PR_URL="Manual trigger from branch: ${GITHUB_REF_NAME}"
             fi
           else
             # For pull_request events
-            PR_NUMBER="${{ github.event.pull_request.number }}"
-            SHA="${{ github.event.pull_request.head.sha }}"
+            PR_NUMBER="${GITHUB_EVENT_PULL_REQUEST_NUMBER}"
+            SHA="${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
             HEAD_REF="$PR_HEAD_REF"
-            PR_URL="${{ github.event.pull_request.html_url }}"
+            PR_URL="${GITHUB_EVENT_PULL_REQUEST_HTML_URL}"
           fi
 
           # Set outputs for use in other steps
@@ -87,21 +95,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.vars.outputs.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           # Create pending status
           gh api \
             --method POST \
-            repos/${{ github.repository }}/statuses/"$SHA" \
+            repos/"${GITHUB_REPOSITORY}"/statuses/"$SHA" \
             --field state="pending" \
             --field description="E2E test is running..." \
             --field context="E2E Test / test" \
-            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --field target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Checkout test repository
         uses: actions/checkout@v5
         with:
           repository: actionutils/test-trusted-tag-releaser
           token: ${{ secrets.TEST_TRUSTED_TAG_RELEASER_REPO_GITHUB_TOKEN }}
+          persist-credentials: false
 
       - name: Configure git
         run: |
@@ -202,14 +214,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.vars.outputs.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           gh api \
             --method POST \
-            repos/${{ github.repository }}/statuses/"$SHA" \
+            repos/"${GITHUB_REPOSITORY}"/statuses/"$SHA" \
             --field state="pending" \
             --field description="Test PR merged, waiting for release workflow..." \
             --field context="E2E Test / test" \
-            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --field target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Wait for release workflow completion
         env:
@@ -295,28 +310,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.vars.outputs.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           gh api \
             --method POST \
-            repos/${{ github.repository }}/statuses/"$SHA" \
+            repos/"${GITHUB_REPOSITORY}"/statuses/"$SHA" \
             --field state="success" \
             --field description="E2E test completed successfully" \
             --field context="E2E Test / test" \
-            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --field target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Update status check - Failure
         if: github.event_name == 'workflow_dispatch' && failure()
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.vars.outputs.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           gh api \
             --method POST \
-            repos/${{ github.repository }}/statuses/"$SHA" \
+            repos/"${GITHUB_REPOSITORY}"/statuses/"$SHA" \
             --field state="failure" \
             --field description="E2E test failed" \
             --field context="E2E Test / test" \
-            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --field target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Output test PR info
         env:
