@@ -35,8 +35,8 @@ on:
         type: string
     secrets:
       github-token:
-        description: 'GitHub token with appropriate permissions'
-        required: true
+        description: 'DEPRECATED: This input is deprecated and will be removed in future versions. The workflow now uses the default GITHUB_TOKEN automatically. You can safely remove this input from your workflow calls.'
+        required: false
     outputs:
       tag_name:
         description: 'The tag name created or used for this release'
@@ -111,7 +111,7 @@ jobs:
         id: create-temp-branch
         if: steps.bumpr-dry-run.outputs.skip != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.github-token || github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEXT_VERSION: ${{ steps.bumpr-dry-run.outputs.next_version }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -142,7 +142,7 @@ jobs:
       # Add release information to job summary
       - name: Add release information to job summary
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
           SKIP: ${{ steps.bumpr-dry-run.outputs.skip }}
           NEXT_VERSION: ${{ steps.bumpr-dry-run.outputs.next_version }}
@@ -339,7 +339,7 @@ jobs:
       - name: Compute tag SHA and subjects
         id: compute-subjects
         env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.version.outputs.tag_name }}
         run: |
 
@@ -396,7 +396,7 @@ jobs:
       - name: Update GitHub Release
         id: create_release
         env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.version.outputs.tag_name }}
           CUSTOM_RELEASE_NOTES: ${{ inputs.release-notes }}
           CURRENT_VERSION: ${{ needs.version.outputs.current_version }}
@@ -551,7 +551,7 @@ jobs:
       # See: https://github.com/orgs/community/discussions/151442
       - name: Delete temporary branch
         env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEMP_BRANCH: ${{ needs.release-check.outputs.temp_branch }}
         run: |
           # Get the exact branch name that was created
@@ -592,7 +592,7 @@ jobs:
 
       - name: Verify SLSA provenance with slsa-verifier
         env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag_name }}
         run: |
           set -euo pipefail
