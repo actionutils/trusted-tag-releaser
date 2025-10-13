@@ -280,7 +280,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       # Set up signed tag configuration
-      - uses: chainguard-dev/actions/setup-gitsign@8e97c1fc72515d627456cb0b92e9c9f299356375
+      - uses: chainguard-dev/actions/setup-gitsign@7b18ea9960f945cabf19a84752e580829347f4ed
 
       # EXPERIMENTAL: Use gitsign offline mode
       - run: git config --local gitsign.rekorMode offline
@@ -514,7 +514,7 @@ jobs:
           ref: ${{ needs.version.outputs.tag_name }}
 
       # Set up signed tag configuration
-      - uses: chainguard-dev/actions/setup-gitsign@8e97c1fc72515d627456cb0b92e9c9f299356375
+      - uses: chainguard-dev/actions/setup-gitsign@7b18ea9960f945cabf19a84752e580829347f4ed
 
       # EXPERIMENTAL: Use gitsign offline mode
       - run: git config --local gitsign.rekorMode offline
